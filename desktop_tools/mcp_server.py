@@ -111,7 +111,7 @@ def tool_get_snapshot() -> list[types.Content]:
         parts.append("\n(该窗口未暴露可交互控件信息，请查看截图自行判断)")
 
     text_content = types.TextContent(type="text", text="\n".join(parts))
-    screenshot = capture_window(ox, oy, win.rect.right, win.rect.bottom)
+    screenshot = capture_window(ox, oy, win.rect.right, win.rect.bottom, hwnd=hwnd)
     if screenshot:
         b64, mime = screenshot
         return [text_content, types.ImageContent(type="image", data=b64, mimeType=mime)]

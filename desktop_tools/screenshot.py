@@ -46,7 +46,8 @@ def _get_dxcam():
 
 def capture_window(left: int, top: int,
                    right: int, bottom: int,
-                   quality: int = 85) -> Optional[tuple[str, str]]:
+                   quality: int = 85,
+                   hwnd: int = 0) -> Optional[tuple[str, str]]:
     """截取指定区域的截图，返回 (base64, mime_type) 元组。
 
     优先使用 DXcam（D3D），失败时回退 PIL。
@@ -69,7 +70,7 @@ def capture_window(left: int, top: int,
 
     # DXcam 需要物理坐标（逻辑坐标 × DPI 缩放）
     # 用 window 的 hwnd 获取其所在屏幕的 DPI
-    scale = _get_dpi_scale(0)  # TODO: 传入实际 hwnd
+    scale = _get_dpi_scale(hwnd)
     phys_left = int(left * scale)
     phys_top = int(top * scale)
     phys_right = int(right * scale)
