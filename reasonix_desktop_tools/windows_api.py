@@ -281,7 +281,8 @@ def _to_element_info(control: object, name: str) -> ElementInfo:
 def list_active_window_elements() -> list[ElementInfo]:
     """列出当前激活窗口内所有可交互控件。
 
-    返回元素列表，供 get_elements() 使用。
+    返回元素列表。
+    如果 UIA 遍历超过 2 秒则超时返回当前已收集的控件。
     """
     uia = _import_uia()
     if uia is None:
@@ -297,8 +298,9 @@ def list_active_window_elements() -> list[ElementInfo]:
     if win_control is None:
         return []
 
+    from ._timeout import timeout_collect
     elements: list[ElementInfo] = []
-    _walk_controls(win_control, elements, depth=0, max_depth=3)
+    timeout_collect(win_control, elements, max_depth=3, max_seconds=2.0)
     return elements
 
 

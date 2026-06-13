@@ -15,10 +15,27 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+# DXcam 单例（避免重复创建实例的警告）
+_dx_camera = None
+
+
+def _get_dxcam():
+    """获取或创建全局 DXcam 实例。"""
+    global _dx_camera
+    if _dx_camera is not None:
+        return _dx_camera
+    try:
+        import dxcam
+        _dx_camera = dxcam.create(output_color="RGB")
+        return _dx_camera
+    except Exception:
+        return None
+
 
 def capture_window(left: int, top: int,
-                   right: int, bottom: int) -> Optional[str]:
-    """截取指定区域的截图，返回 base64 编码的 PNG。
+                   right: int, bottom: int,
+                   quality: int = 85) -> Optional[str]:
+    """截取指定区域的截图，返回 base64 编码的图片。
 
     优先使用 DXcam（D3D），失败时回退 PIL。
     可以截取被其他窗口遮挡的内容。
@@ -26,16 +43,25 @@ def capture_window(left: int, top: int,
     参数:
         left, top: 区域左上角屏幕坐标
         right, bottom: 区域右下角屏幕坐标
+        quality: JPEG 压缩质量 1-100（默认 85）。85 时体积减少约 5-10x。
 
-    返回 base64 PNG 字符串，失败返回 None。
+    返回 base64 字符串，失败返回 None。
     """
     # 方案 A: DXcam（D3D，可截取被遮挡内容）
-    result = _capture_dxcam(left, top, right, bottom)
+    if left < 0: left = 0
+    if top < 0: top = 0
+    width = right - left
+    height = bottom - top
+    if width <= 0 or height <= 0:
+        logger.warning("无效截图区域: (%d,%d)-(%d,%d)", left, top, right, bottom)
+        return None
+
+    result = _capture_dxcam(left, top, right, bottom, quality)
     if result is not None:
         return result
 
-    # 方案 B: PIL ImageGrab（传统方式，不支持被遮挡窗口）
-    result = _capture_pil(left, top, right, bottom)
+    # 方案 B: PIL ImageGrab
+    result = _capture_pil(left, top, right, bottom, quality)
     if result is not None:
         return result
 
@@ -43,24 +69,38 @@ def capture_window(left: int, top: int,
     return None
 
 
+def _encode_img(img, quality: int) -> Optional[str]:
+    """将 PIL Image 编码为 base64。质量 < 95 用 JPEG，否则用 PNG。"""
+    try:
+        buf = io.BytesIO()
+        if quality < 95:
+            # JPEG 压缩，体积小 5-10x
+            img = img.convert("RGB")
+            img.save(buf, format="JPEG", quality=quality, optimize=True)
+        else:
+            img.save(buf, format="PNG", optimize=True)
+        return base64.b64encode(buf.getvalue()).decode()
+    except Exception as exc:
+        logger.error("图片编码失败: %s", exc)
+        return None
+
+
 def _capture_dxcam(left: int, top: int,
-                   right: int, bottom: int) -> Optional[str]:
+                   right: int, bottom: int,
+                   quality: int) -> Optional[str]:
     """使用 DXcam（D3D 后端）截取指定区域。"""
     try:
-        import dxcam
         import numpy as np
         from PIL import Image
 
-        camera = dxcam.create(output_color="RGB")
+        camera = _get_dxcam()
         if camera is None:
             return None
 
-        # 截取区域
         region = (left, top, right, bottom)
         frame = camera.grab(region=region)
 
         if frame is None:
-            # 首次调用可能返回 None，重试一次
             import time
             time.sleep(0.1)
             frame = camera.grab(region=region)
@@ -69,11 +109,8 @@ def _capture_dxcam(left: int, top: int,
             logger.warning("DXcam 返回空帧")
             return None
 
-        # numpy array → PIL Image → PNG base64
         img = Image.fromarray(frame)
-        buf = io.BytesIO()
-        img.save(buf, format="PNG")
-        return base64.b64encode(buf.getvalue()).decode()
+        return _encode_img(img, quality)
 
     except ImportError:
         logger.debug("dxcam 未安装")
@@ -84,16 +121,13 @@ def _capture_dxcam(left: int, top: int,
 
 
 def _capture_pil(left: int, top: int,
-                 right: int, bottom: int) -> Optional[str]:
+                 right: int, bottom: int,
+                 quality: int) -> Optional[str]:
     """使用 PIL ImageGrab 截取指定区域（fallback）。"""
     try:
         from PIL import ImageGrab
-
         img = ImageGrab.grab(bbox=(left, top, right, bottom))
-        buf = io.BytesIO()
-        img.save(buf, format="PNG")
-        return base64.b64encode(buf.getvalue()).decode()
-
+        return _encode_img(img, quality)
     except ImportError:
         logger.error("PIL 未安装")
         return None
@@ -102,26 +136,21 @@ def _capture_pil(left: int, top: int,
         return None
 
 
-def capture_full_screen() -> Optional[str]:
-    """截取全屏，返回 base64 PNG。
+def capture_full_screen(quality: int = 85) -> Optional[str]:
+    """截取全屏，返回 base64 图片。
 
     不依赖窗口信息，直接截取当前屏幕全部内容。
     """
     try:
-        import dxcam
-        import numpy as np
         from PIL import Image
-
-        camera = dxcam.create(output_color="RGB")
+        camera = _get_dxcam()
         if camera is not None:
+            import numpy as np
             frame = camera.grab()
             if frame is not None:
                 img = Image.fromarray(frame)
-                buf = io.BytesIO()
-                img.save(buf, format="PNG")
-                return base64.b64encode(buf.getvalue()).decode()
+                return _encode_img(img, quality)
     except Exception:
         pass
 
-    # fallback
-    return _capture_pil(0, 0, 99999, 99999)
+    return _capture_pil(0, 0, 99999, 99999, quality)

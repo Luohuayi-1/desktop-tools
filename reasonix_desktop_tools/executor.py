@@ -198,6 +198,181 @@ def get_cursor_position() -> tuple[int, int]:
 
 
 # ---------------------------------------------------------------------------
+# 新增: 键盘快捷键
+# ---------------------------------------------------------------------------
+
+# 按键名称 → 虚拟键码映射
+_KEY_MAP = {
+    "Enter": 0x0D,
+    "Return": 0x0D,
+    "Escape": 0x1B,
+    "Esc": 0x1B,
+    "Tab": 0x09,
+    "Backspace": 0x08,
+    "Delete": 0x2E,
+    "Del": 0x2E,
+    "Insert": 0x2D,
+    "Home": 0x24,
+    "End": 0x23,
+    "PageUp": 0x21,
+    "PageDown": 0x22,
+    "Space": 0x20,
+    "ArrowUp": 0x26,
+    "Up": 0x26,
+    "ArrowDown": 0x28,
+    "Down": 0x28,
+    "ArrowLeft": 0x25,
+    "Left": 0x25,
+    "ArrowRight": 0x27,
+    "Right": 0x27,
+    "Shift": 0x10,
+    "Control": 0x11,
+    "Ctrl": 0x11,
+    "Alt": 0x12,
+    "Menu": 0x12,
+    "F1": 0x70,
+    "F2": 0x71,
+    "F3": 0x72,
+    "F4": 0x73,
+    "F5": 0x74,
+    "F6": 0x75,
+    "F7": 0x76,
+    "F8": 0x77,
+    "F9": 0x78,
+    "F10": 0x79,
+    "F11": 0x7A,
+    "F12": 0x7B,
+}
+
+# 单个字符 → vk 映射（用于 ctrl+c 等组合中的字母）
+def _char_to_vk(ch: str) -> int:
+    if len(ch) != 1:
+        return _KEY_MAP.get(ch, 0)
+    if 'a' <= ch <= 'z':
+        return ord(ch.upper())
+    if 'A' <= ch <= 'Z':
+        return ord(ch)
+    if '0' <= ch <= '9':
+        return ord(ch)
+    return _KEY_MAP.get(ch, 0)
+
+
+def press_key(key: str) -> ActionResult:
+    """发送键盘按键或快捷键。
+
+    支持格式:
+      - 单键: "Enter", "Escape", "Tab", "F5"
+      - 组合: "ctrl+c", "Alt+Tab", "shift+F10", "ctrl+shift+Esc"
+    """
+    try:
+        parts = key.split("+")
+        mods = []
+        main_key = ""
+
+        for p in parts:
+            p = p.strip()
+            lower = p.lower()
+            if lower in ("ctrl", "control"):
+                mods.append(0x11)
+            elif lower in ("alt", "menu"):
+                mods.append(0x12)
+            elif lower in ("shift",):
+                mods.append(0x10)
+            elif lower in ("win", "windows", "meta"):
+                mods.append(0x5B)
+            else:
+                main_key = p
+
+        if main_key:
+            vk = _char_to_vk(main_key)
+            if vk == 0:
+                # 尝试查找特殊键
+                vk = _KEY_MAP.get(main_key, 0)
+                if vk == 0:
+                    return ActionResult(False, f"未知按键: {main_key}")
+        else:
+            # 纯修饰键
+            vk = 0
+
+        # 按下全部修饰键
+        for mod in mods:
+            _send_keyboard_input(mod, 0, 0)  # KEYEVENTF_KEYDOWN
+
+        if vk:
+            _send_keyboard_input(vk, 0, 0)  # KEYDOWN
+            time.sleep(0.03)
+            _send_keyboard_input(vk, 0, KEYEVENTF_KEYUP)  # KEYUP
+
+        # 释放全部修饰键
+        for mod in reversed(mods):
+            _send_keyboard_input(mod, 0, KEYEVENTF_KEYUP)
+
+        logger.debug("press_key(%s)", key)
+        return ActionResult(True)
+    except Exception as exc:
+        logger.error("press_key 失败: %s", exc)
+        return ActionResult(False, str(exc))
+
+
+# ---------------------------------------------------------------------------
+# 新增: 滚动
+# ---------------------------------------------------------------------------
+
+def scroll(x: int, y: int, delta_x: int = 0, delta_y: int = 2) -> ActionResult:
+    """从指定坐标处滚动鼠标滚轮。
+
+    参数:
+        x, y: 屏幕坐标
+        delta_x: 水平滚动（正数向右），单位"咔哒"
+        delta_y: 垂直滚动（正数向下），单位"咔哒"
+    """
+    try:
+        _move_to(x, y)
+        time.sleep(0.05)
+
+        if delta_y:
+            # 垂直滚轮: WHEEL_DELTA = 120，一个咔哒 = 120
+            amount = -delta_y * 120  # 负号: 向下为正
+            _send_mouse_wheel(amount)
+
+        if delta_x:
+            amount_x = delta_x * 120
+            _send_mouse_hwheel(amount_x)
+
+        logger.debug("scroll(%d, %d, dx=%d, dy=%d)", x, y, delta_x, delta_y)
+        return ActionResult(True)
+    except Exception as exc:
+        logger.error("scroll 失败: %s", exc)
+        return ActionResult(False, str(exc))
+
+
+def _send_mouse_wheel(amount: int) -> None:
+    """发送垂直滚轮事件。"""
+    inp = INPUT()
+    inp.type = INPUT_MOUSE
+    inp.union.mi.dx = 0
+    inp.union.mi.dy = 0
+    inp.union.mi.mouseData = amount
+    inp.union.mi.dwFlags = MOUSEEVENTF_WHEEL
+    inp.union.mi.time = 0
+    inp.union.mi.dwExtraInfo = ctypes.pointer(ctypes.c_ulong(0))
+    _SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
+
+
+def _send_mouse_hwheel(amount: int) -> None:
+    """发送水平滚轮事件。"""
+    inp = INPUT()
+    inp.type = INPUT_MOUSE
+    inp.union.mi.dx = 0
+    inp.union.mi.dy = 0
+    inp.union.mi.mouseData = amount
+    inp.union.mi.dwFlags = 0x1000  # MOUSEEVENTF_HWHEEL
+    inp.union.mi.time = 0
+    inp.union.mi.dwExtraInfo = ctypes.pointer(ctypes.c_ulong(0))
+    _SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
+
+
+# ---------------------------------------------------------------------------
 # 内部实现
 # ---------------------------------------------------------------------------
 
