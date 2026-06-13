@@ -356,9 +356,10 @@ def press_key(key: str) -> ActionResult:
             if not _send_keyboard_input(vk, 0, KEYEVENTF_KEYUP):
                 return ActionResult(False, f"主键 {vk:#x} 释放失败")
 
-        # 释放全部修饰键
+        # 释放全部修饰键（释放失败记日志不阻断——键盘状态可能受影响）
         for mod in reversed(mods):
-            _send_keyboard_input(mod, 0, KEYEVENTF_KEYUP)  # 释放失败不阻断
+            if not _send_keyboard_input(mod, 0, KEYEVENTF_KEYUP):
+                logger.warning("修饰键 0x%x 释放失败，可能影响后续键盘输入", mod)
 
         logger.debug("press_key(%s)", key)
         return ActionResult(True)
