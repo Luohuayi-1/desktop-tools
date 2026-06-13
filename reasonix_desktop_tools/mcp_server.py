@@ -23,9 +23,13 @@ import mcp.types as types
 
 from .executor import (
     click as exec_click,
+    double_click as exec_double_click,
     type_text as exec_type_text,
     press_key as exec_press_key,
+    hold_key as exec_hold_key,
+    release_key as exec_release_key,
     scroll as exec_scroll,
+    move_to as exec_move_to,
 )
 from .screenshot import capture_window
 from .windows_api import (
@@ -147,19 +151,22 @@ def tool_switch_window(title: str) -> list[types.TextContent]:
     return [types.TextContent(type="text", text=f"❌ 无法激活窗口: {title}")]
 
 
-def tool_list_windows() -> list[types.TextContent]:
-    """列出所有顶层窗口标题。"""
+def tool_list_windows(limit: int = 20) -> list[types.TextContent]:
+    """列出所有顶层窗口标题。limit 控制最大返回数，默认 20。"""
     try:
         import uiautomation as uia
         titles = []
         for child in uia.GetRootControl().GetChildren():
+            if len(titles) >= limit:
+                break
             try:
                 name = child.Name
                 if name and name.strip():
                     titles.append(name)
             except Exception:
                 continue
-        text = "当前窗口列表:\n" + "\n".join(f"  - \"{t}\"" for t in titles)
+        text = f"当前窗口列表 (前 {len(titles)} 个):\n"
+        text += "\n".join(f"  - \"{t}\"" for t in titles)
         return [types.TextContent(type="text", text=text)]
     except Exception as exc:
         return [types.TextContent(type="text", text=f"❌ 获取窗口列表失败: {exc}")]
@@ -184,6 +191,46 @@ async def tool_wait(ms: int) -> list[types.TextContent]:
     return [types.TextContent(type="text", text=f"✅ 等待 {ms}ms")]
 
 
+def tool_double_click(x: int, y: int) -> list[types.TextContent]:
+    """在窗口相对坐标处双击。"""
+    ctx = _get_window_context()
+    if ctx is None:
+        return [types.TextContent(type="text", text="❌ 当前无激活窗口")]
+    win, ox, oy = ctx
+    result = exec_double_click(ox + x, oy + y)
+    if not result.success:
+        return [types.TextContent(type="text", text=f"❌ 双击失败: {result.message}")]
+    return [types.TextContent(type="text", text=f"✅ 已双击 ({x}, {y})")]
+
+
+def tool_move_to(x: int, y: int) -> list[types.TextContent]:
+    """移动鼠标到窗口相对坐标 (x,y) 处（不点击）。"""
+    ctx = _get_window_context()
+    if ctx is None:
+        return [types.TextContent(type="text", text="❌ 当前无激活窗口")]
+    win, ox, oy = ctx
+    result = exec_move_to(ox + x, oy + y)
+    if not result.success:
+        return [types.TextContent(type="text", text=f"❌ 移动失败: {result.message}")]
+    return [types.TextContent(type="text", text=f"✅ 已移动鼠标到 ({x}, {y})")]
+
+
+def tool_hold_key(key: str) -> list[types.TextContent]:
+    """按住一个键不放。需配合 click 等操作后调用 release_key 释放。"""
+    result = exec_hold_key(key)
+    if not result.success:
+        return [types.TextContent(type="text", text=f"❌ 按键失败: {result.message}")]
+    return [types.TextContent(type="text", text=f"✅ 已按住: {key}")]
+
+
+def tool_release_key(key: str) -> list[types.TextContent]:
+    """释放之前按住的键。"""
+    result = exec_release_key(key)
+    if not result.success:
+        return [types.TextContent(type="text", text=f"❌ 释放失败: {result.message}")]
+    return [types.TextContent(type="text", text=f"✅ 已释放: {key}")]
+
+
 # ---------------------------------------------------------------------------
 # MCP Server
 # ---------------------------------------------------------------------------
@@ -198,8 +245,6 @@ def main() -> None:
         from mcp.server import Server
         from mcp.server.models import InitializationOptions
         import mcp.server.stdio
-        import mcp.types as types
-
         app = Server("desktop")
 
         @app.list_tools()
@@ -287,6 +332,52 @@ def main() -> None:
                         "required": ["ms"],
                     },
                 ),
+                types.Tool(
+                    name="double_click",
+                    description="在窗口相对坐标 (x,y) 处双击。",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "x": {"type": "integer"},
+                            "y": {"type": "integer"},
+                        },
+                        "required": ["x", "y"],
+                    },
+                ),
+                types.Tool(
+                    name="move_to",
+                    description="移动鼠标到窗口相对坐标 (x,y) 处（不点击）。",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "x": {"type": "integer"},
+                            "y": {"type": "integer"},
+                        },
+                        "required": ["x", "y"],
+                    },
+                ),
+                types.Tool(
+                    name="hold_key",
+                    description="按住一个键不放（不释放）。之后需要调用 release_key 释放。用于 '按住 Ctrl 点击' 等组合操作。",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "key": {"type": "string", "description": "按键名，如 'Control'、'Shift'、'Alt'"}
+                        },
+                        "required": ["key"],
+                    },
+                ),
+                types.Tool(
+                    name="release_key",
+                    description="释放之前用 hold_key 按住的键。",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "key": {"type": "string", "description": "按键名，与 hold_key 传入的一致"}
+                        },
+                        "required": ["key"],
+                    },
+                ),
             ]
 
         @app.call_tool()
@@ -311,6 +402,14 @@ def main() -> None:
                 )
             elif name == "wait":
                 return await tool_wait(arguments["ms"])
+            elif name == "double_click":
+                return tool_double_click(arguments["x"], arguments["y"])
+            elif name == "move_to":
+                return tool_move_to(arguments["x"], arguments["y"])
+            elif name == "hold_key":
+                return tool_hold_key(arguments["key"])
+            elif name == "release_key":
+                return tool_release_key(arguments["key"])
             else:
                 raise ValueError(f"未知工具: {name}")
 

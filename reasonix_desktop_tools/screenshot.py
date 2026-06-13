@@ -17,6 +17,22 @@ logger = logging.getLogger(__name__)
 
 # DXcam 单例（避免重复创建实例的警告）
 _dx_camera = None
+_dpi_scale = None
+
+
+def _get_dpi_scale() -> float:
+    """获取系统 DPI 缩放比例。100%=1.0, 125%=1.25, 150%=1.5。"""
+    global _dpi_scale
+    if _dpi_scale is not None:
+        return _dpi_scale
+    try:
+        import ctypes
+        hwnd = ctypes.windll.user32.GetDesktopWindow()
+        dpi = ctypes.windll.user32.GetDpiForWindow(hwnd)
+        _dpi_scale = dpi / 96.0
+        return _dpi_scale
+    except Exception:
+        return 1.0
 
 
 def _get_dxcam():
@@ -41,7 +57,7 @@ def capture_window(left: int, top: int,
     可以截取被其他窗口遮挡的内容。
 
     参数:
-        left, top: 区域左上角屏幕坐标
+        left, top: 区域左上角屏幕坐标（逻辑坐标，DPI 自动转换）
         right, bottom: 区域右下角屏幕坐标
         quality: JPEG 压缩质量 1-100（默认 85）。
 
@@ -55,10 +71,18 @@ def capture_window(left: int, top: int,
         logger.warning("无效截图区域: (%d,%d)-(%d,%d)", left, top, right, bottom)
         return None
 
-    result = _capture_dxcam(left, top, right, bottom, quality)
+    # DXcam 需要物理坐标（逻辑坐标 × DPI 缩放）
+    scale = _get_dpi_scale()
+    phys_left = int(left * scale)
+    phys_top = int(top * scale)
+    phys_right = int(right * scale)
+    phys_bottom = int(bottom * scale)
+
+    result = _capture_dxcam(phys_left, phys_top, phys_right, phys_bottom, quality)
     if result is not None:
         return result
 
+    # PIL fallback 用逻辑坐标（PIL 自动处理 DPI）
     result = _capture_pil(left, top, right, bottom, quality)
     if result is not None:
         return result

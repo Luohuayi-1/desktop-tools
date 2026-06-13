@@ -114,9 +114,16 @@ _SendInput.argtypes = [
 ]
 _SendInput.restype = ctypes.c_uint
 
-# 获取屏幕尺寸（用于绝对坐标转换）
-_SM_CXSCREEN = _user32.GetSystemMetrics(0)
-_SM_CYSCREEN = _user32.GetSystemMetrics(1)
+# 虚拟屏幕尺寸（多显示器聚合）
+# SystemMetrics indices
+_SM_XVIRTUALSCREEN = 76
+_SM_YVIRTUALSCREEN = 77
+_SM_CXVIRTUALSCREEN = 78
+_SM_CYVIRTUALSCREEN = 79
+_VIRTUAL_LEFT = _user32.GetSystemMetrics(_SM_XVIRTUALSCREEN)
+_VIRTUAL_TOP = _user32.GetSystemMetrics(_SM_YVIRTUALSCREEN)
+_VIRTUAL_WIDTH = _user32.GetSystemMetrics(_SM_CXVIRTUALSCREEN)
+_VIRTUAL_HEIGHT = _user32.GetSystemMetrics(_SM_CYVIRTUALSCREEN)
 
 
 # ---------------------------------------------------------------------------
@@ -228,8 +235,12 @@ _KEY_MAP = {
     "Shift": 0x10,
     "Control": 0x11,
     "Ctrl": 0x11,
+    "ctrl": 0x11,
     "Alt": 0x12,
     "Menu": 0x12,
+    "alt": 0x12,
+    "Shift": 0x10,
+    "shift": 0x10,
     "F1": 0x70,
     "F2": 0x71,
     "F3": 0x72,
@@ -255,6 +266,39 @@ def _char_to_vk(ch: str) -> int:
     if '0' <= ch <= '9':
         return ord(ch)
     return _KEY_MAP.get(ch, 0)
+
+
+def hold_key(key: str) -> ActionResult:
+    """按住一个键不放（不释放）。用于组合操作如 ctrl+click。
+
+    之后必须调用 release_key() 释放。
+    """
+    try:
+        vk = _char_to_vk(key)
+        if vk == 0:
+            vk = _KEY_MAP.get(key, 0)
+        if vk == 0:
+            return ActionResult(False, f"未知按键: {key}")
+        _send_keyboard_input(vk, 0, 0)
+        logger.debug("hold_key(%s)", key)
+        return ActionResult(True)
+    except Exception as exc:
+        return ActionResult(False, str(exc))
+
+
+def release_key(key: str) -> ActionResult:
+    """释放一个之前按住的键。"""
+    try:
+        vk = _char_to_vk(key)
+        if vk == 0:
+            vk = _KEY_MAP.get(key, 0)
+        if vk == 0:
+            return ActionResult(False, f"未知按键: {key}")
+        _send_keyboard_input(vk, 0, KEYEVENTF_KEYUP)
+        logger.debug("release_key(%s)", key)
+        return ActionResult(True)
+    except Exception as exc:
+        return ActionResult(False, str(exc))
 
 
 def press_key(key: str) -> ActionResult:
@@ -346,8 +390,8 @@ def scroll(x: int, y: int, delta_x: int = 0, delta_y: int = 2) -> ActionResult:
         return ActionResult(False, str(exc))
 
 
-def _send_mouse_wheel(amount: int) -> None:
-    """发送垂直滚轮事件。"""
+def _send_mouse_wheel(amount: int) -> bool:
+    """发送垂直滚轮事件。返回是否成功。"""
     inp = INPUT()
     inp.type = INPUT_MOUSE
     inp.union.mi.dx = 0
@@ -356,11 +400,12 @@ def _send_mouse_wheel(amount: int) -> None:
     inp.union.mi.dwFlags = MOUSEEVENTF_WHEEL
     inp.union.mi.time = 0
     inp.union.mi.dwExtraInfo = ctypes.pointer(ctypes.c_ulong(0))
-    _SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
+    result = _SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
+    return result == 1
 
 
-def _send_mouse_hwheel(amount: int) -> None:
-    """发送水平滚轮事件。"""
+def _send_mouse_hwheel(amount: int) -> bool:
+    """发送水平滚轮事件。返回是否成功。"""
     inp = INPUT()
     inp.type = INPUT_MOUSE
     inp.union.mi.dx = 0
@@ -369,7 +414,8 @@ def _send_mouse_hwheel(amount: int) -> None:
     inp.union.mi.dwFlags = 0x1000  # MOUSEEVENTF_HWHEEL
     inp.union.mi.time = 0
     inp.union.mi.dwExtraInfo = ctypes.pointer(ctypes.c_ulong(0))
-    _SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
+    result = _SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
+    return result == 1
 
 
 # ---------------------------------------------------------------------------
@@ -381,8 +427,8 @@ def _move_to(x: int, y: int) -> None:
     _SetCursorPos(x, y)
 
 
-def _send_mouse_input(flags: int) -> None:
-    """发送鼠标输入事件。"""
+def _send_mouse_input(flags: int) -> bool:
+    """发送鼠标输入事件。返回是否成功 (True=插入1个事件)。"""
     inp = INPUT()
     inp.type = INPUT_MOUSE
     inp.union.mi.dx = 0
@@ -392,7 +438,8 @@ def _send_mouse_input(flags: int) -> None:
     inp.union.mi.time = 0
     inp.union.mi.dwExtraInfo = ctypes.pointer(ctypes.c_ulong(0))
 
-    _SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
+    result = _SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
+    return result == 1
 
 
 def _type_char(ch: str) -> None:
@@ -409,8 +456,8 @@ def _type_char(ch: str) -> None:
     _send_keyboard_input(0, scan, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP)
 
 
-def _send_keyboard_input(wVk: int, wScan: int, flags: int) -> None:
-    """发送键盘输入事件。"""
+def _send_keyboard_input(wVk: int, wScan: int, flags: int) -> bool:
+    """发送键盘输入事件。返回是否成功。"""
     inp = INPUT()
     inp.type = INPUT_KEYBOARD
     inp.union.ki.wVk = wVk
@@ -419,4 +466,5 @@ def _send_keyboard_input(wVk: int, wScan: int, flags: int) -> None:
     inp.union.ki.time = 0
     inp.union.ki.dwExtraInfo = ctypes.pointer(ctypes.c_ulong(0))
 
-    _SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
+    result = _SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
+    return result == 1
