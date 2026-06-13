@@ -383,17 +383,19 @@ def _startup_checks() -> None:
 # ---------------------------------------------------------------------------
 
 def tool_find_by_name(name: str, role: str = "") -> list[types.TextContent]:
-    """在当前窗口按名称查找控件，返回坐标。"""
-    from .windows_api import find_element_by_name
-    from .windows_api import get_active_window
+    """在当前窗口按名称查找控件，返回窗口相对坐标（以客户区为原点）。"""
+    from .windows_api import find_element_by_name, get_client_rect, get_active_window
     win = get_active_window()
     if win is None:
         return [types.TextContent(type="text", text="❌ 当前无激活窗口")]
+    cr = get_client_rect(win.hwnd)
+    ox = cr['client_left'] if cr else win.rect.left
+    oy = cr['client_top'] if cr else win.rect.top
     elem = find_element_by_name(win.title, name, role or None)
     if elem is None:
         return [types.TextContent(type="text", text=f"❌ 未找到控件: {name}")]
-    rx = elem.rect.center_x - win.rect.left
-    ry = elem.rect.center_y - win.rect.top
+    rx = elem.rect.center_x - ox
+    ry = elem.rect.center_y - oy
     return [types.TextContent(
         type="text",
         text=f"✅ 找到 [{elem.role}] \"{elem.name}\" @ 窗口相对坐标 ({rx}, {ry})"
