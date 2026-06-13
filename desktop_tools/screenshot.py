@@ -20,7 +20,6 @@ _dx_camera = None
 
 def _get_dpi_scale(hwnd: int = 0) -> float:
     """获取指定窗口的 DPI 缩放比例。hwnd=0 用主屏。"""
-    global _dpi_scale
     try:
         import ctypes
         dpi = ctypes.windll.user32.GetDpiForWindow(hwnd or ctypes.windll.user32.GetDesktopWindow())

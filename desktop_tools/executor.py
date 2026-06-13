@@ -467,6 +467,11 @@ def scroll(x: int, y: int, delta_x: int = 0, delta_y: int = 5) -> ActionResult:
         delta_y: 垂直滚动（正数向下），单位"咔哒"
     """
     try:
+        dpi = _user32.GetDpiForWindow(_user32.GetDesktopWindow())
+        scale = dpi / 96.0
+        if scale != 1.0:
+            x = int(x * scale)
+            y = int(y * scale)
         SM_CX = _user32.GetSystemMetrics(78)  # CXVIRTUALSCREEN
         SM_CY = _user32.GetSystemMetrics(79)  # CYVIRTUALSCREEN
         abs_x = int(x * 65535 / max(SM_CX - 1, 1))
