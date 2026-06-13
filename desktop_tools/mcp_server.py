@@ -412,6 +412,9 @@ def main() -> None:
             r = fn()
             if name == "wait":
                 r = await r
+            # 记录完成状态
+            result_text = r[0].text[:80] if r and hasattr(r[0], 'text') else str(r)[:80]
+            _log_call(name, arguments, result_text)
             return r
 
         async def run():

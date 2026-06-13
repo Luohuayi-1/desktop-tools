@@ -187,7 +187,7 @@ def double_click(x: int, y: int) -> ActionResult:
         result = click(x, y)
         if not result.success:
             return result
-        time.sleep(0.03)
+        time.sleep(0.1)
     return ActionResult(True)
 
 
@@ -241,54 +241,55 @@ def get_cursor_position() -> tuple[int, int]:
 
 # 按键名称 → 虚拟键码映射
 _KEY_MAP = {
-    "Enter": 0x0D,
-    "Return": 0x0D,
-    "Escape": 0x1B,
-    "Esc": 0x1B,
-    "Tab": 0x09,
-    "Backspace": 0x08,
-    "Delete": 0x2E,
-    "Del": 0x2E,
-    "Insert": 0x2D,
-    "Home": 0x24,
-    "End": 0x23,
-    "PageUp": 0x21,
-    "PageDown": 0x22,
-    "Space": 0x20,
-    "ArrowUp": 0x26,
-    "Up": 0x26,
-    "ArrowDown": 0x28,
-    "Down": 0x28,
-    "ArrowLeft": 0x25,
-    "Left": 0x25,
-    "ArrowRight": 0x27,
-    "Right": 0x27,
-    "Control": 0x11,
-    "Ctrl": 0x11,
+    "enter": 0x0D,
+    "return": 0x0D,
+    "escape": 0x1B,
+    "esc": 0x1B,
+    "tab": 0x09,
+    "backspace": 0x08,
+    "delete": 0x2E,
+    "del": 0x2E,
+    "insert": 0x2D,
+    "home": 0x24,
+    "end": 0x23,
+    "pageup": 0x21,
+    "pagedown": 0x22,
+    "space": 0x20,
+    "arrowup": 0x26,
+    "up": 0x26,
+    "arrowdown": 0x28,
+    "down": 0x28,
+    "arrowleft": 0x25,
+    "left": 0x25,
+    "arrowright": 0x27,
+    "right": 0x27,
+    "control": 0x11,
     "ctrl": 0x11,
-    "Alt": 0x12,
-    "Menu": 0x12,
     "alt": 0x12,
-    "Shift": 0x10,
+    "menu": 0x12,
     "shift": 0x10,
-    "F1": 0x70,
-    "F2": 0x71,
-    "F3": 0x72,
-    "F4": 0x73,
-    "F5": 0x74,
-    "F6": 0x75,
-    "F7": 0x76,
-    "F8": 0x77,
-    "F9": 0x78,
-    "F10": 0x79,
-    "F11": 0x7A,
-    "F12": 0x7B,
+    "f1": 0x70,
+    "f2": 0x71,
+    "f3": 0x72,
+    "f4": 0x73,
+    "f5": 0x74,
+    "f6": 0x75,
+    "f7": 0x76,
+    "f8": 0x77,
+    "f9": 0x78,
+    "f10": 0x79,
+    "f11": 0x7A,
+    "f12": 0x7B,
 }
+
+# 跟踪已按住的键
+_held_keys: set = set()
+
 
 # 单个字符 → vk 映射（用于 ctrl+c 等组合中的字母）
 def _char_to_vk(ch: str) -> int:
     if len(ch) != 1:
-        return _KEY_MAP.get(ch, 0)
+        return _KEY_MAP.get(ch.lower(), 0)
     if 'a' <= ch <= 'z':
         return ord(ch.upper())
     if 'A' <= ch <= 'Z':
@@ -309,8 +310,12 @@ def hold_key(key: str) -> ActionResult:
             vk = _KEY_MAP.get(key, 0)
         if vk == 0:
             return ActionResult(False, f"未知按键: {key}")
+        if vk in _held_keys:
+            # 已按住，跳过
+            return ActionResult(True)
         if not _send_keyboard_input(vk, 0, 0):
             return ActionResult(False, "SendInput 按键失败")
+        _held_keys.add(vk)
         logger.debug("hold_key(%s)", key)
         return ActionResult(True)
     except Exception as exc:
@@ -325,8 +330,11 @@ def release_key(key: str) -> ActionResult:
             vk = _KEY_MAP.get(key, 0)
         if vk == 0:
             return ActionResult(False, f"未知按键: {key}")
+        if vk not in _held_keys:
+            return ActionResult(True)  # 不在按住状态，跳过
         if not _send_keyboard_input(vk, 0, KEYEVENTF_KEYUP):
             return ActionResult(False, "SendInput 释放失败")
+        _held_keys.discard(vk)
         logger.debug("release_key(%s)", key)
         return ActionResult(True)
     except Exception as exc:
@@ -459,9 +467,9 @@ def _send_mouse_hwheel(amount: int) -> bool:
 # 内部实现
 # ---------------------------------------------------------------------------
 
-def _move_to(x: int, y: int) -> None:
-    """移动鼠标到绝对屏幕坐标。"""
-    _SetCursorPos(x, y)
+def _move_to(x: int, y: int) -> bool:
+    """移动鼠标到绝对屏幕坐标。返回是否成功。"""
+    return bool(_SetCursorPos(x, y))
 
 
 def _send_mouse_input(flags: int) -> bool:
