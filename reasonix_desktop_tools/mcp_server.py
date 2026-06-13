@@ -256,11 +256,111 @@ def tool_release_key(key: str) -> list[types.TextContent]:
 
 
 # ---------------------------------------------------------------------------
+# 操作日志
+# ---------------------------------------------------------------------------
+
+_OP_LOG = logging.getLogger("desktop.ops")
+
+
+def _log_call(tool_name: str, args: dict, result: str) -> None:
+    """记录每次工具调用。"""
+    arg_preview = ", ".join(f"{k}={v}" for k, v in args.items())
+    _OP_LOG.info("[%s] %s → %s", tool_name, arg_preview, result[:60])
+
+
+# ---------------------------------------------------------------------------
+# 紧急终止快捷键（Ctrl+Alt+K）
+# ---------------------------------------------------------------------------
+
+def _register_kill_switch() -> None:
+    """注册全局热键 Ctrl+Alt+K 紧急终止 MCP Server。"""
+    try:
+        import ctypes
+        MOD_ALT = 0x0001
+        MOD_CONTROL = 0x0002
+        VK_K = 0x4B  # K 键
+        ctypes.windll.user32.RegisterHotKey(None, 1, MOD_CONTROL | MOD_ALT, VK_K)
+        _run_kill_listener()
+    except Exception as exc:
+        logger.warning("紧急终止快捷键注册失败: %s", exc)
+
+
+def _run_kill_listener() -> None:
+    """在后台线程监听热键消息。"""
+    import threading
+    def _listen():
+        try:
+            import ctypes
+            msg = ctypes.wintypes.MSG()
+            while True:
+                if ctypes.windll.user32.GetMessageW(ctypes.byref(msg), None, 0, 0):
+                    if msg.message == 0x0312:  # WM_HOTKEY
+                        logger.warning("⚠️ 紧急终止: Ctrl+Alt+K 触发")
+                        import os
+                        os._exit(0)
+                    ctypes.windll.user32.TranslateMessage(ctypes.byref(msg))
+                    ctypes.windll.user32.DispatchMessageW(ctypes.byref(msg))
+        except Exception:
+            pass
+    t = threading.Thread(target=_listen, daemon=True)
+    t.start()
+
+
+# ---------------------------------------------------------------------------
+# 启动自检
+# ---------------------------------------------------------------------------
+
+def _startup_checks() -> None:
+    """打印当前系统环境信息，帮助排查问题。"""
+    info = []
+    try:
+        import ctypes
+        hwnd = ctypes.windll.user32.GetDesktopWindow()
+        dpi = ctypes.windll.user32.GetDpiForWindow(hwnd)
+        info.append(f"DPI: {dpi} ({dpi / 96.0:.0%})")
+    except Exception:
+        info.append("DPI: unknown")
+
+    try:
+        monitor_count = ctypes.windll.user32.GetSystemMetrics(80)  # SM_CMONITORS
+        info.append(f"显示器: {monitor_count}")
+    except Exception:
+        info.append("显示器: unknown")
+
+    import ctypes
+    VIRTUAL_LEFT = ctypes.windll.user32.GetSystemMetrics(76)
+    VIRTUAL_TOP = ctypes.windll.user32.GetSystemMetrics(77)
+    VIRTUAL_WIDTH = ctypes.windll.user32.GetSystemMetrics(78)
+    VIRTUAL_HEIGHT = ctypes.windll.user32.GetSystemMetrics(79)
+    info.append(f"虚拟桌面: ({VIRTUAL_LEFT},{VIRTUAL_TOP}) {VIRTUAL_WIDTH}x{VIRTUAL_HEIGHT}")
+
+    uia_ok = _import_uia() is not None
+    info.append(f"UIA: {'可用' if uia_ok else '不可用'}")
+
+    dxcam_ok = True
+    try:
+        import dxcam
+    except Exception:
+        dxcam_ok = False
+    info.append(f"DXcam: {'可用' if dxcam_ok else '不可用'}")
+
+    print(f"+------------------------------------------")
+    print(f"| reasonix-desktop-tools v{__version__}")
+    for line in info:
+        print(f"| {line}")
+    print(f"| 紧急终止: Ctrl+Alt+K")
+    print(f"+------------------------------------------")
+    logger.info("启动自检完成: %s", "; ".join(info))
+
+
+# ---------------------------------------------------------------------------
 # MCP Server
 # ---------------------------------------------------------------------------
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s | %(name)s | %(message)s")
+    _startup_checks()
+    _register_kill_switch()
     try:
         from mcp.server import Server
         from mcp.server.models import InitializationOptions
@@ -286,6 +386,7 @@ def main() -> None:
 
         @app.call_tool()
         async def call_tool(name: str, arguments: dict) -> list:
+            _log_call(name, arguments, "started")
             fns = {
                 "get_snapshot": lambda: tool_get_snapshot(),
                 "click": lambda: tool_click(arguments["x"], arguments["y"]),
