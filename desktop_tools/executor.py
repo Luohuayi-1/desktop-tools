@@ -518,6 +518,10 @@ def _type_char(ch: str) -> bool:
         ok1 = _send_keyboard_input(0x0D, 0, KEYEVENTF_KEYDOWN)
         ok2 = _send_keyboard_input(0x0D, 0, KEYEVENTF_KEYUP)
         return ok1 and ok2
+    if ch == "\t":
+        ok1 = _send_keyboard_input(0x09, 0, KEYEVENTF_KEYDOWN)
+        ok2 = _send_keyboard_input(0x09, 0, KEYEVENTF_KEYUP)
+        return ok1 and ok2
 
     scan = ord(ch)
     ok1 = _send_keyboard_input(0, scan, KEYEVENTF_UNICODE | KEYEVENTF_KEYDOWN)

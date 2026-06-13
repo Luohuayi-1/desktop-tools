@@ -413,6 +413,7 @@ def main() -> None:
                 types.Tool(name="switch_window", description="切换到标题包含指定文字的窗口。如'微信'、'Chrome'。多候选时返回列表。", inputSchema={"type":"object","properties":{"title":{"type":"string"}},"required":["title"]}),
                 types.Tool(name="list_windows", description="列出当前所有顶层窗口标题。", inputSchema={"type":"object","properties":{}}),
                 types.Tool(name="scroll", description="从窗口相对坐标(x,y)处滚动。delta_y>0向下,<0向上。", inputSchema={"type":"object","properties":{"x":{"type":"integer"},"y":{"type":"integer"},"delta_x":{"type":"integer","default":0},"delta_y":{"type":"integer","default":5}},"required":["x","y"]}),
+                types.Tool(name="find_by_name", description="按名称在当前窗口查找控件，返回窗口相对坐标(x,y)和角色，配合click使用。仅对暴露UIA的应用有效。", inputSchema={"type":"object","properties":{"name":{"type":"string"},"role":{"type":"string","default":""}},"required":["name"]}),
                 types.Tool(name="wait", description="异步等待指定毫秒数。", inputSchema={"type":"object","properties":{"ms":{"type":"integer"}},"required":["ms"]}),
             ]
 
