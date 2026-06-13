@@ -130,6 +130,15 @@ _VIRTUAL_HEIGHT = _user32.GetSystemMetrics(_SM_CYVIRTUALSCREEN)
 # 公开接口
 # ---------------------------------------------------------------------------
 
+def bring_to_front(hwnd: int) -> None:
+    """确保窗口在最前。"""
+    try:
+        _user32.SetForegroundWindow(hwnd)
+        _user32.SetActiveWindow(hwnd)
+    except Exception:
+        pass
+
+
 def click(x: int, y: int, button: str = "left") -> ActionResult:
     """移动鼠标到指定坐标并点击。
 
@@ -138,15 +147,29 @@ def click(x: int, y: int, button: str = "left") -> ActionResult:
         button: "left" / "right"
     """
     try:
-        _move_to(x, y)
-        time.sleep(0.05)
+        # 一次性 SendInput 移动+点击（ABSOLUTE 模式）
+        SM_CX = _user32.GetSystemMetrics(0)
+        SM_CY = _user32.GetSystemMetrics(1)
+        abs_x = int(x * 65535 / max(SM_CX - 1, 1))
+        abs_y = int(y * 65535 / max(SM_CY - 1, 1))
 
+        flags = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE
         if button == "left":
-            ok = _send_mouse_input(MOUSEEVENTF_LEFTDOWN | MOUSEEVENTF_LEFTUP)
+            flags |= MOUSEEVENTF_LEFTDOWN | MOUSEEVENTF_LEFTUP
         elif button == "right":
-            ok = _send_mouse_input(MOUSEEVENTF_RIGHTDOWN | MOUSEEVENTF_RIGHTUP)
+            flags |= MOUSEEVENTF_RIGHTDOWN | MOUSEEVENTF_RIGHTUP
         else:
             return ActionResult(False, f"不支持的按键: {button}")
+
+        inp = INPUT()
+        inp.type = INPUT_MOUSE
+        inp.union.mi.dx = abs_x
+        inp.union.mi.dy = abs_y
+        inp.union.mi.mouseData = 0
+        inp.union.mi.dwFlags = flags
+        inp.union.mi.time = 0
+        inp.union.mi.dwExtraInfo = ctypes.pointer(ctypes.c_ulong(0))
+        ok = _SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT)) == 1
 
         if not ok:
             return ActionResult(False, "SendInput 失败（事件被拦截或权限不足）")

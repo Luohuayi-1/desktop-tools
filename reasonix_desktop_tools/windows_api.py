@@ -278,8 +278,13 @@ def _to_element_info(control: object, name: str) -> ElementInfo:
     )
 
 
-def list_active_window_elements() -> list[ElementInfo]:
+def list_active_window_elements(
+    win_control: object = None,
+) -> list[ElementInfo]:
     """列出当前激活窗口内所有可交互控件。
+
+    参数:
+        win_control: 预获取的顶层窗口 UIA 控件。传入可避免重复 GetFocusedControl。
 
     返回元素列表。
     如果 UIA 遍历超过 2 秒则超时返回当前已收集的控件。
@@ -288,17 +293,16 @@ def list_active_window_elements() -> list[ElementInfo]:
     if uia is None:
         return []
 
-    try:
-        focused = uia.GetFocusedControl()
-    except Exception:
-        return []
-
-    root = uia.GetRootControl()
-    win_control = _find_top_level_window(focused, root)
     if win_control is None:
-        return []
+        try:
+            focused = uia.GetFocusedControl()
+        except Exception:
+            return []
+        root = uia.GetRootControl()
+        win_control = _find_top_level_window(focused, root)
+        if win_control is None:
+            return []
 
-    # 通过 hwnd (int) 传给 _timeout，避免跨线程传递 UIA COM 对象
     try:
         hwnd = win_control.NativeWindowHandle
     except Exception:
