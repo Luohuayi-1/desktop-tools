@@ -176,7 +176,7 @@ def type_text(x: int, y: int, text: str) -> ActionResult:
         if not click_result.success:
             return click_result
 
-        time.sleep(0.1)
+        time.sleep(0.3)  # 等待焦点就绪（某些 Electron/浏览器应用需要 200-500ms）
 
         # 逐个字符输入
         for i, ch in enumerate(text):
@@ -237,7 +237,6 @@ _KEY_MAP = {
     "Left": 0x25,
     "ArrowRight": 0x27,
     "Right": 0x27,
-    "Shift": 0x10,
     "Control": 0x11,
     "Ctrl": 0x11,
     "ctrl": 0x11,
@@ -372,7 +371,7 @@ def press_key(key: str) -> ActionResult:
 # 新增: 滚动
 # ---------------------------------------------------------------------------
 
-def scroll(x: int, y: int, delta_x: int = 0, delta_y: int = 2) -> ActionResult:
+def scroll(x: int, y: int, delta_x: int = 0, delta_y: int = 5) -> ActionResult:
     """从指定坐标处滚动鼠标滚轮。
 
     参数:
@@ -385,13 +384,14 @@ def scroll(x: int, y: int, delta_x: int = 0, delta_y: int = 2) -> ActionResult:
         time.sleep(0.05)
 
         if delta_y:
-            # 垂直滚轮: WHEEL_DELTA = 120，一个咔哒 = 120
-            amount = -delta_y * 120  # 负号: 向下为正
-            _send_mouse_wheel(amount)
+            amount = -delta_y * 120
+            if not _send_mouse_wheel(amount):
+                return ActionResult(False, "垂直滚轮 SendInput 失败")
 
         if delta_x:
             amount_x = delta_x * 120
-            _send_mouse_hwheel(amount_x)
+            if not _send_mouse_hwheel(amount_x):
+                return ActionResult(False, "水平滚轮 SendInput 失败")
 
         logger.debug("scroll(%d, %d, dx=%d, dy=%d)", x, y, delta_x, delta_y)
         return ActionResult(True)

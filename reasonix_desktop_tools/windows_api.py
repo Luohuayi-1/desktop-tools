@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from typing import Optional
 
@@ -298,9 +299,9 @@ def list_active_window_elements() -> list[ElementInfo]:
     if win_control is None:
         return []
 
-    from ._timeout import timeout_collect
     elements: list[ElementInfo] = []
-    timeout_collect(win_control, elements, max_depth=3, max_seconds=2.0)
+    deadline = time.monotonic() + 2.0
+    _walk_controls(win_control, elements, 0, 3, deadline)
     return elements
 
 
@@ -346,9 +347,16 @@ def _find_top_level_window(control: object, root: object) -> object | None:
 def _walk_controls(control: object,
                    result: list[ElementInfo],
                    depth: int,
-                   max_depth: int) -> None:
-    """递归遍历 UIA 控件树，收集可交互控件。"""
+                   max_depth: int,
+                   deadline: float = 0) -> None:
+    """递归遍历 UIA 控件树，收集可交互控件。
+
+    参数:
+        deadline: time.monotonic() 截止时间。0=不超时。
+    """
     if depth > max_depth:
+        return
+    if deadline and time.monotonic() > deadline:
         return
 
     uia = _import_uia()
@@ -383,7 +391,7 @@ def _walk_controls(control: object,
 
             # 跳过无名称的容器控件
             if not name and ctrl_type in (PANE_TYPE, GROUP_TYPE):
-                _walk_controls(child, result, depth + 1, max_depth)
+                _walk_controls(child, result, depth + 1, max_depth, deadline)
                 continue
 
             # 只收集可交互控件类型
@@ -405,8 +413,7 @@ def _walk_controls(control: object,
                     is_enabled=is_enabled,
                 ))
 
-            # 继续遍历子控件
-            _walk_controls(child, result, depth + 1, max_depth)
+                _walk_controls(child, result, depth + 1, max_depth, deadline)
 
         except Exception:
             continue

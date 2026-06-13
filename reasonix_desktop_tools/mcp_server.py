@@ -143,16 +143,18 @@ def tool_list_windows(limit: int = 20) -> list[types.TextContent]:
     """列出所有顶层窗口标题。limit 控制最大返回数，默认 20。"""
     try:
         import uiautomation as uia
+        seen = set()
         titles = []
         for child in uia.GetRootControl().GetChildren():
-            if len(titles) >= limit:
-                break
             try:
                 name = child.Name
-                if name and name.strip():
+                if name and name.strip() and name not in seen:
+                    seen.add(name)
                     titles.append(name)
             except Exception:
                 continue
+            if len(titles) >= limit:
+                break
         text = f"当前窗口列表 (前 {len(titles)} 个):\n"
         text += "\n".join(f"  - \"{t}\"" for t in titles)
         return [types.TextContent(type="text", text=text)]
