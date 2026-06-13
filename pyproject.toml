@@ -1,5 +1,5 @@
 [project]
-name = "reasonix-desktop-tools"
+name = "desktop-tools"
 version = "0.1.0"
 description = "MCP Server for desktop control — works with Claude Codex, Cline, Cursor, and any MCP-compatible Agent"
 requires-python = ">=3.10,<3.13"
@@ -13,11 +13,11 @@ dependencies = [
 ]
 
 [project.urls]
-homepage = "https://github.com/your-username/reasonix-desktop-tools"
+homepage = "https://github.com/Luohuayi-1/desktop-tools"
 
 [build-system]
 requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["reasonix_desktop_tools*"]
+include = ["desktop_tools*"]

@@ -12,7 +12,7 @@
 import sys
 sys.path.insert(0, r"D:\桌面操控\workspace\reasonix-desktop-tools")
 
-from reasonix_desktop_tools.mcp_server import get_snapshot, get_snapshot_text
+from desktop_tools.mcp_server import get_snapshot, get_snapshot_text
 
 print("=" * 50)
 print("测试: get_snapshot_text()")

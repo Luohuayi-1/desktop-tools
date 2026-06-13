@@ -1,4 +1,4 @@
-"""Entry point: python -m reasonix_desktop_tools"""
+"""Entry point: python -m desktop_tools"""
 
 from .mcp_server import main
 

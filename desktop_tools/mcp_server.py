@@ -345,7 +345,7 @@ def _startup_checks() -> None:
     info.append(f"DXcam: {'可用' if dxcam_ok else '不可用'}")
 
     print(f"+------------------------------------------")
-    print(f"| reasonix-desktop-tools v{__version__}")
+    print(f"| desktop-tools v{__version__}")
     for line in info:
         print(f"| {line}")
     print(f"| 紧急终止: Ctrl+Alt+K")

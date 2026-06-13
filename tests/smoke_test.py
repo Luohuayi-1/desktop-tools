@@ -31,32 +31,32 @@ def check(desc: str, ok: bool, detail: str = ""):
 
 
 print("=" * 50)
-print("smoke test — reasonix-desktop-tools")
+print("smoke test — desktop-tools")
 print("=" * 50)
 
 # 1. 版本一致性
 print("\n1. 版本号检查")
-from reasonix_desktop_tools import __version__ as v_init
+from desktop_tools import __version__ as v_init
 check("__init__.py 版本非空", bool(v_init))
 check("版本格式 x.y.z", len(v_init.split(".")) == 3)
 
 # 2. 模块导入
 print("\n2. 模块导入")
-from reasonix_desktop_tools.mcp_server import (
+from desktop_tools.mcp_server import (
     tool_get_snapshot, tool_click, tool_type_text,
     tool_press_key, tool_list_windows, tool_switch_window,
 )
 check("所有工具函数导入成功", True)
 
-from reasonix_desktop_tools.executor import (
+from desktop_tools.executor import (
     click, type_text, press_key, scroll, hold_key, release_key, bring_to_front,
 )
 check("所有执行器函数导入成功", True)
 
-from reasonix_desktop_tools.screenshot import capture_window, capture_full_screen
+from desktop_tools.screenshot import capture_window, capture_full_screen
 check("截图模块导入成功", True)
 
-from reasonix_desktop_tools.windows_api import (
+from desktop_tools.windows_api import (
     get_active_window, list_active_window_elements, find_window,
 )
 check("Windows API 导入成功", True)
