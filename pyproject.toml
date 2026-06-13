@@ -1,6 +1,6 @@
 [project]
 name = "desktop-tools"
-version = "0.1.0"
+version = "0.3.0"
 description = "MCP Server for desktop control — works with Claude Codex, Cline, Cursor, and any MCP-compatible Agent"
 requires-python = ">=3.10,<3.13"
 license = { text = "MIT" }
