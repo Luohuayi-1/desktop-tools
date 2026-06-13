@@ -70,10 +70,15 @@ def _get_ctx():
     return ctx
 
 
-def _bring_target_front(hwnd: int) -> None:
-    """前置目标窗口后执行操作。"""
-    if hwnd:
-        bring_to_front(hwnd)
+def _bring_target_front(hwnd: int) -> bool:
+    """前置目标窗口。返回窗口是否有效（未被销毁）。"""
+    if not hwnd:
+        return False
+    import ctypes
+    if not ctypes.windll.user32.IsWindow(hwnd):
+        return False
+    bring_to_front(hwnd)
+    return True
 
 
 def tool_get_snapshot() -> list[types.Content]:

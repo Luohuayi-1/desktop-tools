@@ -199,10 +199,13 @@ def type_text(x: int, y: int, text: str) -> ActionResult:
         if not click_result.success:
             return click_result
 
-        time.sleep(0.3)  # 等待焦点就绪（某些 Electron/浏览器应用需要 200-500ms）
+        time.sleep(0.3)  # 等待焦点就绪
 
-        # 逐个字符输入
+        target_hwnd = _user32.GetForegroundWindow()
+        # 逐个字符输入，途中检查焦点是否丢失
         for i, ch in enumerate(text):
+            if _user32.GetForegroundWindow() != target_hwnd:
+                return ActionResult(False, f"第 {i+1} 个字符输入时焦点丢失")
             if not _type_char(ch):
                 logger.error("type_text 第 %d 个字符输入失败: %r", i, ch)
                 return ActionResult(False, f"第 {i+1} 个字符输入失败")
