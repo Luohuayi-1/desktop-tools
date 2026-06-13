@@ -375,15 +375,9 @@ click / type_text → 执行
 Agent 自己看截图、自己算坐标、自己决定下一步
 ```
 
-### 和 Computer Use 的区别
+### 参考
 
-| 维度 | Claude Computer Use | reasonix-desktop-tools |
-|---|---|---|
-| 截图 | Windows.Graphics.Capture | DXcam（D3D） |
-| 坐标 | 窗口相对坐标 | 窗口相对坐标 |
-| Agent 兼容性 | 仅 Codex | 所有 MCP Agent |
-| 截图缓存 | 无 | 操作日志、启动自检 |
-| 紧急终止 | 无 | Ctrl+Alt+K |
+本项目的设计思路参考了 Anthropic 的 Computer Use——"工具提供原始信息，Agent 自行决策"是通用做法。
 
 ### 技术栈
 
