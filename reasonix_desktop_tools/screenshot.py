@@ -34,8 +34,8 @@ def _get_dxcam():
 
 def capture_window(left: int, top: int,
                    right: int, bottom: int,
-                   quality: int = 85) -> Optional[str]:
-    """截取指定区域的截图，返回 base64 编码的图片。
+                   quality: int = 85) -> Optional[tuple[str, str]]:
+    """截取指定区域的截图，返回 (base64, mime_type) 元组。
 
     优先使用 DXcam（D3D），失败时回退 PIL。
     可以截取被其他窗口遮挡的内容。
@@ -43,11 +43,10 @@ def capture_window(left: int, top: int,
     参数:
         left, top: 区域左上角屏幕坐标
         right, bottom: 区域右下角屏幕坐标
-        quality: JPEG 压缩质量 1-100（默认 85）。85 时体积减少约 5-10x。
+        quality: JPEG 压缩质量 1-100（默认 85）。
 
-    返回 base64 字符串，失败返回 None。
+    返回 (base64, "image/jpeg"|"image/png")，失败返回 None。
     """
-    # 方案 A: DXcam（D3D，可截取被遮挡内容）
     if left < 0: left = 0
     if top < 0: top = 0
     width = right - left
@@ -60,7 +59,6 @@ def capture_window(left: int, top: int,
     if result is not None:
         return result
 
-    # 方案 B: PIL ImageGrab
     result = _capture_pil(left, top, right, bottom, quality)
     if result is not None:
         return result
@@ -69,17 +67,19 @@ def capture_window(left: int, top: int,
     return None
 
 
-def _encode_img(img, quality: int) -> Optional[str]:
-    """将 PIL Image 编码为 base64。质量 < 95 用 JPEG，否则用 PNG。"""
+def _encode_img(img, quality: int) -> Optional[tuple[str, str]]:
+    """将 PIL Image 编码为 base64。返回 (base64, mime_type)。"""
     try:
         buf = io.BytesIO()
         if quality < 95:
-            # JPEG 压缩，体积小 5-10x
             img = img.convert("RGB")
             img.save(buf, format="JPEG", quality=quality, optimize=True)
+            mime = "image/jpeg"
         else:
             img.save(buf, format="PNG", optimize=True)
-        return base64.b64encode(buf.getvalue()).decode()
+            mime = "image/png"
+        b64 = base64.b64encode(buf.getvalue()).decode()
+        return (b64, mime)
     except Exception as exc:
         logger.error("图片编码失败: %s", exc)
         return None
@@ -87,7 +87,7 @@ def _encode_img(img, quality: int) -> Optional[str]:
 
 def _capture_dxcam(left: int, top: int,
                    right: int, bottom: int,
-                   quality: int) -> Optional[str]:
+                   quality: int) -> Optional[tuple[str, str]]:
     """使用 DXcam（D3D 后端）截取指定区域。"""
     try:
         import numpy as np
@@ -122,7 +122,7 @@ def _capture_dxcam(left: int, top: int,
 
 def _capture_pil(left: int, top: int,
                  right: int, bottom: int,
-                 quality: int) -> Optional[str]:
+                 quality: int) -> Optional[tuple[str, str]]:
     """使用 PIL ImageGrab 截取指定区域（fallback）。"""
     try:
         from PIL import ImageGrab
@@ -136,11 +136,8 @@ def _capture_pil(left: int, top: int,
         return None
 
 
-def capture_full_screen(quality: int = 85) -> Optional[str]:
-    """截取全屏，返回 base64 图片。
-
-    不依赖窗口信息，直接截取当前屏幕全部内容。
-    """
+def capture_full_screen(quality: int = 85) -> Optional[tuple[str, str]]:
+    """截取全屏，返回 (base64, mime_type)。"""
     try:
         from PIL import Image
         camera = _get_dxcam()

@@ -6,12 +6,14 @@
   - type_text(text, x, y) → 窗口相对坐标输入
   - press_key(key) → 发送键盘快捷键
   - switch_window(title) → 切换到指定窗口
+  - list_windows() → 列出所有窗口标题
   - scroll(x, y, delta_x, delta_y) → 从坐标处滚动
-  - wait(ms) → 等待指定毫秒数
+  - wait(ms) → 异步等待
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import sys
 import time
@@ -34,9 +36,6 @@ from .windows_api import (
 
 logger = logging.getLogger(__name__)
 
-# 工具返回类型: list of TextContent | ImageContent
-# call_tool 返回 list[types.TextContent | types.ImageContent]
-
 
 def _get_window_context() -> tuple | None:
     """获取当前窗口上下文。返回 (win, screen_x_offset, screen_y_offset) 或 None。"""
@@ -46,19 +45,34 @@ def _get_window_context() -> tuple | None:
     return (win, win.rect.left, win.rect.top)
 
 
-def tool_get_snapshot():
+def _activate_window_by_title(title: str) -> bool:
+    """激活标题包含指定文字的窗口。"""
+    try:
+        import uiautomation as uia
+        for child in uia.GetRootControl().GetChildren():
+            try:
+                if child.Name and title.lower() in child.Name.lower():
+                    child.SetActive()
+                    child.SetFocus()
+                    return True
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return False
+
+
+def tool_get_snapshot() -> list[types.Content]:
     """快照：窗口信息 + accessibility 树 + 截图（ImageContent）。"""
     win = get_active_window()
     if win is None:
         return [types.TextContent(type="text", text="当前无激活窗口")]
 
-    # -- 文本部分 --
     parts = []
     parts.append(f"当前窗口: \"{win.title}\"")
     parts.append(f"进程: {win.process_name or 'unknown'}")
     parts.append(f"窗口大小: {win.rect.width} x {win.rect.height}")
 
-    # accessibility 树（精简版，最多 15 个控件）
     elements = list_active_window_elements()
     if elements:
         parts.append(f"\n可交互控件 ({len(elements)} 个):")
@@ -75,27 +89,22 @@ def tool_get_snapshot():
     else:
         parts.append("\n(该窗口未暴露可交互控件信息，请查看截图自行判断)")
 
-    text_content = types.TextContent(
-        type="text", text="\n".join(parts)
-    )
+    text_content = types.TextContent(type="text", text="\n".join(parts))
 
-    # -- 截图部分（ImageContent）--
     screenshot = capture_window(
         win.rect.left, win.rect.top,
         win.rect.right, win.rect.bottom
     )
     if screenshot:
+        b64, mime = screenshot
         image_content = types.ImageContent(
-            type="image",
-            data=screenshot,
-            mimeType="image/png",
+            type="image", data=b64, mimeType=mime,
         )
         return [text_content, image_content]
-    else:
-        return [text_content]
+    return [text_content]
 
 
-def tool_click(x: int, y: int):
+def tool_click(x: int, y: int) -> list[types.TextContent]:
     """在窗口相对坐标点击。"""
     ctx = _get_window_context()
     if ctx is None:
@@ -107,7 +116,7 @@ def tool_click(x: int, y: int):
     return [types.TextContent(type="text", text=f"✅ 已点击 ({x}, {y})")]
 
 
-def tool_type_text(text: str, x: int, y: int):
+def tool_type_text(text: str, x: int, y: int) -> list[types.TextContent]:
     """在窗口相对坐标处输入文字。"""
     ctx = _get_window_context()
     if ctx is None:
@@ -119,37 +128,46 @@ def tool_type_text(text: str, x: int, y: int):
     return [types.TextContent(type="text", text=f"✅ 已在 ({x}, {y}) 输入「{text}」")]
 
 
-def tool_press_key(key: str):
-    """发送键盘按键或快捷键，如 'Enter', 'Escape', 'ctrl+c', 'Alt+Tab'。"""
+def tool_press_key(key: str) -> list[types.TextContent]:
+    """发送键盘按键或快捷键。"""
     result = exec_press_key(key)
     if not result.success:
         return [types.TextContent(type="text", text=f"❌ 按键失败: {result.message}")]
     return [types.TextContent(type="text", text=f"✅ 按键: {key}")]
 
 
-def tool_switch_window(title: str):
+def tool_switch_window(title: str) -> list[types.TextContent]:
     """切换到标题包含指定文字的窗口。"""
     win = find_window(title_match=title)
     if win is None:
         return [types.TextContent(type="text", text=f"❌ 未找到窗口: {title}")]
-    try:
-        import uiautomation as uia
-        for child in uia.GetRootControl().GetChildren():
-            try:
-                if child.Name and title.lower() in child.Name.lower():
-                    child.SetActive()
-                    child.SetFocus()
-                    time.sleep(0.3)
-                    return [types.TextContent(type="text", text=f"✅ 已切换到: {win.title}")]
-            except Exception:
-                continue
-    except Exception:
-        pass
+    ok = _activate_window_by_title(title)
+    if ok:
+        return [types.TextContent(type="text", text=f"✅ 已切换到: {win.title}")]
     return [types.TextContent(type="text", text=f"❌ 无法激活窗口: {title}")]
 
 
-def tool_scroll(x: int, y: int, delta_x: int = 0, delta_y: int = 2):
-    """从窗口相对坐标 (x,y) 处滚动。delta_y > 0 向下，< 0 向上。"""
+def tool_list_windows() -> list[types.TextContent]:
+    """列出所有顶层窗口标题。"""
+    try:
+        import uiautomation as uia
+        titles = []
+        for child in uia.GetRootControl().GetChildren():
+            try:
+                name = child.Name
+                if name and name.strip():
+                    titles.append(name)
+            except Exception:
+                continue
+        text = "当前窗口列表:\n" + "\n".join(f"  - \"{t}\"" for t in titles)
+        return [types.TextContent(type="text", text=text)]
+    except Exception as exc:
+        return [types.TextContent(type="text", text=f"❌ 获取窗口列表失败: {exc}")]
+
+
+def tool_scroll(x: int, y: int,
+                delta_x: int = 0, delta_y: int = 5) -> list[types.TextContent]:
+    """从窗口相对坐标处滚动。delta_y>0 向下，<0 向上。"""
     ctx = _get_window_context()
     if ctx is None:
         return [types.TextContent(type="text", text="❌ 当前无激活窗口")]
@@ -160,9 +178,9 @@ def tool_scroll(x: int, y: int, delta_x: int = 0, delta_y: int = 2):
     return [types.TextContent(type="text", text=f"✅ 已从 ({x},{y}) 滚动")]
 
 
-def tool_wait(ms: int):
-    """等待指定毫秒数。"""
-    time.sleep(ms / 1000.0)
+async def tool_wait(ms: int) -> list[types.TextContent]:
+    """等待指定毫秒数（异步非阻塞）。"""
+    await asyncio.sleep(ms / 1000.0)
     return [types.TextContent(type="text", text=f"✅ 等待 {ms}ms")]
 
 
@@ -180,6 +198,8 @@ def main() -> None:
         from mcp.server import Server
         from mcp.server.models import InitializationOptions
         import mcp.server.stdio
+        import mcp.types as types
+
         app = Server("desktop")
 
         @app.list_tools()
@@ -187,25 +207,17 @@ def main() -> None:
             return [
                 types.Tool(
                     name="get_snapshot",
-                    description=(
-                        "获取当前激活窗口的完整快照。"
-                        "返回窗口信息 + 可交互控件列表（如果有） + 截图（Agent 可直接看到）。"
-                        "截图使用 D3D 后端，即使窗口被遮挡也能截取。"
-                        "Agent 根据截图和控件信息决定下一步操作的坐标。"
-                    ),
+                    description="获取当前激活窗口完整快照。返回窗口信息 + 控件列表 + 截图（Agent可直接查看）。截图使用D3D后端，被遮挡也能截取。Agent根据截图和控件信息决定下一步操作的坐标。",
                     inputSchema={"type": "object", "properties": {}},
                 ),
                 types.Tool(
                     name="click",
-                    description=(
-                        "在窗口相对坐标 (x, y) 处点击左键。"
-                        "(0,0)=窗口左上角。x/y 范围取决于窗口大小（来自 get_snapshot）。"
-                    ),
+                    description="在窗口相对坐标 (x,y) 处点击左键。(0,0)=窗口左上角。x/y范围来自 get_snapshot 返回的窗口尺寸。",
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "x": {"type": "integer", "description": "窗口相对 X 坐标"},
-                            "y": {"type": "integer", "description": "窗口相对 Y 坐标"},
+                            "x": {"type": "integer"},
+                            "y": {"type": "integer"},
                         },
                         "required": ["x", "y"],
                     },
@@ -216,7 +228,7 @@ def main() -> None:
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "text": {"type": "string", "description": "要输入的文本"},
+                            "text": {"type": "string"},
                             "x": {"type": "integer"},
                             "y": {"type": "integer"},
                         },
@@ -225,52 +237,52 @@ def main() -> None:
                 ),
                 types.Tool(
                     name="press_key",
-                    description=(
-                        "发送键盘按键或快捷键。"
-                        "支持: Enter, Escape, Tab, Backspace, Delete, "
-                        "ArrowUp, ArrowDown, ArrowLeft, ArrowRight, "
-                        "ctrl+c, ctrl+v, ctrl+a, ctrl+z, Alt+Tab, Shift+F10"
-                    ),
+                    description="发送键盘按键或快捷键。支持: Enter, Escape, Tab, ArrowUp/Down/Left/Right, ctrl+c/v/a/z, Alt+Tab, Shift+F10, F1-F12",
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "key": {"type": "string", "description": "按键名称或组合，如 'Enter'、'ctrl+c'、'Alt+Tab'"}
+                            "key": {"type": "string", "description": "按键名或组合，如 'Enter', 'ctrl+c', 'Alt+Tab'"}
                         },
                         "required": ["key"],
                     },
                 ),
                 types.Tool(
                     name="switch_window",
-                    description="切换到标题包含指定文字的窗口。如 '微信'、'Chrome'。",
+                    description="切换到标题包含指定文字的窗口。如 '微信'、'Chrome'、'记事本'。",
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "title": {"type": "string", "description": "窗口标题包含的文字"}
+                            "title": {"type": "string"}
                         },
                         "required": ["title"],
                     },
                 ),
                 types.Tool(
+                    name="list_windows",
+                    description="列出当前所有顶层窗口标题。",
+                    inputSchema={"type": "object", "properties": {}},
+                ),
+                types.Tool(
                     name="scroll",
-                    description="从窗口相对坐标 (x,y) 处滚动。delta_y>0 向下，<0 向上。",
+                    description="从窗口相对坐标 (x,y) 处滚动滚轮。delta_y>0 向下翻，<0 向上翻。",
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "x": {"type": "integer", "description": "窗口相对 X 坐标"},
-                            "y": {"type": "integer", "description": "窗口相对 Y 坐标"},
-                            "delta_x": {"type": "integer", "description": "水平滚动量（正数向右）", "default": 0},
-                            "delta_y": {"type": "integer", "description": "垂直滚动量（正数向下）", "default": 2},
+                            "x": {"type": "integer"},
+                            "y": {"type": "integer"},
+                            "delta_x": {"type": "integer", "default": 0},
+                            "delta_y": {"type": "integer", "default": 5},
                         },
                         "required": ["x", "y"],
                     },
                 ),
                 types.Tool(
                     name="wait",
-                    description="等待指定毫秒数。用于等待界面加载、动画完成等。",
+                    description="等待指定毫秒数（异步，不阻塞其他请求）。用于等待界面加载或动画完成。",
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "ms": {"type": "integer", "description": "等待毫秒数，如 1000=1秒"}
+                            "ms": {"type": "integer", "description": "毫秒，如 1000=1秒"}
                         },
                         "required": ["ms"],
                     },
@@ -284,21 +296,21 @@ def main() -> None:
             elif name == "click":
                 return tool_click(arguments["x"], arguments["y"])
             elif name == "type_text":
-                return tool_type_text(
-                    arguments["text"], arguments["x"], arguments["y"]
-                )
+                return tool_type_text(arguments["text"], arguments["x"], arguments["y"])
             elif name == "press_key":
                 return tool_press_key(arguments["key"])
             elif name == "switch_window":
                 return tool_switch_window(arguments["title"])
+            elif name == "list_windows":
+                return tool_list_windows()
             elif name == "scroll":
                 return tool_scroll(
                     arguments["x"], arguments["y"],
                     arguments.get("delta_x", 0),
-                    arguments.get("delta_y", 2),
+                    arguments.get("delta_y", 5),
                 )
             elif name == "wait":
-                return tool_wait(arguments["ms"])
+                return await tool_wait(arguments["ms"])
             else:
                 raise ValueError(f"未知工具: {name}")
 
@@ -308,11 +320,10 @@ def main() -> None:
                     rs, ws,
                     InitializationOptions(
                         server_name="desktop",
-                        server_version="0.2.0",
+                        server_version="0.3.0",
                     ),
                 )
 
-        import asyncio
         asyncio.run(run())
 
     except ImportError as exc:
