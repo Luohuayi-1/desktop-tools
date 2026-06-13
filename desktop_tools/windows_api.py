@@ -42,6 +42,30 @@ class Rect:
         return f"Rect({self.left}, {self.top}, {self.right}, {self.bottom})"
 
 
+
+def get_client_rect(hwnd: int):
+    """获取窗口客户区（不含标题栏+边框）的屏幕坐标。"""
+    try:
+        import ctypes
+        from ctypes import wintypes
+        frame = wintypes.RECT()
+        ctypes.windll.dwmapi.DwmGetWindowAttribute(
+            ctypes.c_void_p(hwnd), 9,
+            ctypes.byref(frame), ctypes.sizeof(frame)
+        )
+        cr = wintypes.RECT()
+        ctypes.windll.user32.GetClientRect(ctypes.c_void_p(hwnd), ctypes.byref(cr))
+        pt = wintypes.POINT(cr.left, cr.top)
+        ctypes.windll.user32.ClientToScreen(ctypes.c_void_p(hwnd), ctypes.byref(pt))
+        return {
+            'client_left': pt.x, 'client_top': pt.y,
+            'client_width': cr.right - cr.left,
+            'client_height': cr.bottom - cr.top,
+        }
+    except Exception:
+        return None
+
+
 @dataclass
 class WindowInfo:
     hwnd: int
@@ -184,7 +208,7 @@ def find_element_by_name(window_title: str | None,
         "ListItem": 50007,
         "List": 50008,
         "Document": 50036,
-        "ComboBox": 50036,
+        "ComboBox": 50003,
         "TabItem": 50037,
         "MenuItem": 50043,
     }
@@ -312,7 +336,7 @@ def list_active_window_elements(
 
     from ._timeout import timeout_collect
     elements: list[ElementInfo] = []
-    timeout_collect(hwnd, elements, max_depth=3, max_seconds=2.0)
+    timeout_collect(hwnd, elements, max_depth=6, max_seconds=2.0)
     return elements
 
 
@@ -379,7 +403,7 @@ def _walk_controls(control: object,
         50004,  # EditControl
         50008,  # ListControl
         50007,  # ListItemControl
-        50036,  # ComboBoxControl
+        50003,  # ComboBoxControl
         50037,  # TabItemControl
         50043,  # MenuItemControl
         50051,  # HyperlinkControl

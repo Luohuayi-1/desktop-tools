@@ -56,6 +56,13 @@ def _get_ctx():
     if win is None:
         _WIN_CACHE = None
         return None
+    # 使用客户区坐标（不含标题栏+边框）
+    from .windows_api import get_client_rect
+    cr = get_client_rect(win.hwnd)
+    if cr:
+        ox, oy = cr['client_left'], cr['client_top']
+    else:
+        ox, oy = win.rect.left, win.rect.top
     # 获取 UIA 控件引用供 list_active_window_elements 复用
     uia = _import_uia()
     win_control = None
@@ -66,7 +73,7 @@ def _get_ctx():
             win_control = _find_top_level_window(focused, root)
         except Exception:
             pass
-    ctx = (win, win.rect.left, win.rect.top, win.hwnd, win_control)
+    ctx = (win, ox, oy, win.hwnd, win_control)
     _WIN_CACHE = ctx
     return ctx
 
@@ -111,7 +118,7 @@ def tool_get_snapshot() -> list[types.Content]:
         parts.append("\n(该窗口未暴露可交互控件信息，请查看截图自行判断)")
 
     text_content = types.TextContent(type="text", text="\n".join(parts))
-    screenshot = capture_window(ox, oy, win.rect.right, win.rect.bottom, hwnd=hwnd)
+    screenshot = capture_window(ox, oy, ox + win.rect.width, oy + win.rect.height, hwnd=hwnd)
     if screenshot:
         b64, mime = screenshot
         return [text_content, types.ImageContent(type="image", data=b64, mimeType=mime)]
@@ -266,6 +273,10 @@ def tool_release_key(key: str) -> list[types.TextContent]:
 
 _OP_LOG = logging.getLogger("desktop.ops")
 _OP_LOG.setLevel(logging.INFO)
+if not _OP_LOG.handlers:
+    _h = logging.StreamHandler()
+    _h.setFormatter(logging.Formatter("%(levelname)s | %(name)s | %(message)s"))
+    _OP_LOG.addHandler(_h)
 
 
 def _log_call(tool_name: str, args: dict, result: str) -> None:
@@ -297,9 +308,12 @@ def _run_kill_listener() -> None:
     def _listen():
         try:
             import ctypes
+            import time
             msg = ctypes.wintypes.MSG()
             while True:
-                if ctypes.windll.user32.GetMessageW(ctypes.byref(msg), None, 0, 0):
+                # PeekMessageW 非阻塞，每 50ms 轮询
+                ret = ctypes.windll.user32.PeekMessageW(ctypes.byref(msg), None, 0, 0, 1)
+                if ret:
                     if msg.message == 0x0312:  # WM_HOTKEY
                         logger.warning("⚠️ 紧急终止: Ctrl+Alt+K 触发")
                         from .executor import _cleanup_held_keys
@@ -310,6 +324,7 @@ def _run_kill_listener() -> None:
                         os._exit(0)
                     ctypes.windll.user32.TranslateMessage(ctypes.byref(msg))
                     ctypes.windll.user32.DispatchMessageW(ctypes.byref(msg))
+                time.sleep(0.05)
         except Exception:
             pass
     t = threading.Thread(target=_listen, daemon=True)

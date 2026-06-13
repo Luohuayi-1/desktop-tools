@@ -17,8 +17,6 @@ logger = logging.getLogger(__name__)
 
 # DXcam 单例（避免重复创建实例的警告）
 _dx_camera = None
-_dpi_scale = None
-
 
 def _get_dpi_scale(hwnd: int = 0) -> float:
     """获取指定窗口的 DPI 缩放比例。hwnd=0 用主屏。"""
@@ -60,8 +58,6 @@ def capture_window(left: int, top: int,
 
     返回 (base64, "image/jpeg"|"image/png")，失败返回 None。
     """
-    if left < 0: left = 0
-    if top < 0: top = 0
     width = right - left
     height = bottom - top
     if width <= 0 or height <= 0:

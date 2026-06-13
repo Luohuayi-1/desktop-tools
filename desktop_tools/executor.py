@@ -132,10 +132,20 @@ _VIRTUAL_HEIGHT = _user32.GetSystemMetrics(_SM_CYVIRTUALSCREEN)
 # ---------------------------------------------------------------------------
 
 def bring_to_front(hwnd: int) -> None:
-    """确保窗口在最前。"""
+    """确保窗口在最前（通过 AttachThreadInput 避免 UIPI 限制）。"""
     try:
+        foreground = _user32.GetForegroundWindow()
+        if foreground == hwnd:
+            return
+        # 获取两个窗口的线程 ID
+        fg_tid = _user32.GetWindowThreadProcessId(foreground, None)
+        my_tid = _user32.GetWindowThreadProcessId(hwnd, None)
+        # 附加到前台窗口的输入队列
+        _user32.AttachThreadInput(my_tid, fg_tid, True)
         _user32.SetForegroundWindow(hwnd)
         _user32.SetActiveWindow(hwnd)
+        _user32.BringWindowToTop(hwnd)
+        _user32.AttachThreadInput(my_tid, fg_tid, False)
     except Exception:
         pass
 
@@ -148,9 +158,14 @@ def click(x: int, y: int, button: str = "left") -> ActionResult:
         button: "left" / "right"
     """
     try:
-        # 一次性 SendInput 移动+点击（ABSOLUTE 模式）
-        SM_CX = _user32.GetSystemMetrics(0)
-        SM_CY = _user32.GetSystemMetrics(1)
+        # 根据目标窗口所在屏幕的 DPI 缩放坐标
+        dpi = _user32.GetDpiForWindow(_user32.GetDesktopWindow())
+        scale = dpi / 96.0
+        if scale != 1.0:
+            x = int(x * scale)
+            y = int(y * scale)
+        SM_CX = _user32.GetSystemMetrics(78)  # CXVIRTUALSCREEN
+        SM_CY = _user32.GetSystemMetrics(79)  # CYVIRTUALSCREEN
         abs_x = int(x * 65535 / max(SM_CX - 1, 1))
         abs_y = int(y * 65535 / max(SM_CY - 1, 1))
 
@@ -162,15 +177,40 @@ def click(x: int, y: int, button: str = "left") -> ActionResult:
         else:
             return ActionResult(False, f"不支持的按键: {button}")
 
-        inp = INPUT()
-        inp.type = INPUT_MOUSE
-        inp.union.mi.dx = abs_x
-        inp.union.mi.dy = abs_y
-        inp.union.mi.mouseData = 0
-        inp.union.mi.dwFlags = flags
-        inp.union.mi.time = 0
-        inp.union.mi.dwExtraInfo = ctypes.pointer(ctypes.c_ulong(0))
-        ok = _SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT)) == 1
+        # 拆分为 3 次 SendInput：移动 → 按下 → 释放
+        move = INPUT()
+        move.type = INPUT_MOUSE
+        move.union.mi.dx = abs_x
+        move.union.mi.dy = abs_y
+        move.union.mi.dwFlags = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE
+        move.union.mi.time = 0
+        move.union.mi.dwExtraInfo = ctypes.pointer(ctypes.c_ulong(0))
+        ok = _SendInput(1, ctypes.byref(move), ctypes.sizeof(INPUT)) == 1
+        
+        import time
+        time.sleep(0.01)
+
+        down = INPUT()
+        down.type = INPUT_MOUSE
+        down.union.mi.dx = abs_x
+        down.union.mi.dy = abs_y
+        down_flag = MOUSEEVENTF_ABSOLUTE | (MOUSEEVENTF_LEFTDOWN if button == "left" else MOUSEEVENTF_RIGHTDOWN)
+        down.union.mi.dwFlags = down_flag
+        down.union.mi.time = 0
+        down.union.mi.dwExtraInfo = ctypes.pointer(ctypes.c_ulong(0))
+        ok = _SendInput(1, ctypes.byref(down), ctypes.sizeof(INPUT)) == 1 and ok
+
+        time.sleep(0.01)
+
+        up = INPUT()
+        up.type = INPUT_MOUSE
+        up.union.mi.dx = abs_x
+        up.union.mi.dy = abs_y
+        up_flag = MOUSEEVENTF_ABSOLUTE | (MOUSEEVENTF_LEFTUP if button == "left" else MOUSEEVENTF_RIGHTUP)
+        up.union.mi.dwFlags = up_flag
+        up.union.mi.time = 0
+        up.union.mi.dwExtraInfo = ctypes.pointer(ctypes.c_ulong(0))
+        ok = _SendInput(1, ctypes.byref(up), ctypes.sizeof(INPUT)) == 1 and ok
 
         if not ok:
             return ActionResult(False, "SendInput 失败（事件被拦截或权限不足）")
@@ -427,8 +467,8 @@ def scroll(x: int, y: int, delta_x: int = 0, delta_y: int = 5) -> ActionResult:
         delta_y: 垂直滚动（正数向下），单位"咔哒"
     """
     try:
-        SM_CX = _user32.GetSystemMetrics(0)
-        SM_CY = _user32.GetSystemMetrics(1)
+        SM_CX = _user32.GetSystemMetrics(78)  # CXVIRTUALSCREEN
+        SM_CY = _user32.GetSystemMetrics(79)  # CYVIRTUALSCREEN
         abs_x = int(x * 65535 / max(SM_CX - 1, 1))
         abs_y = int(y * 65535 / max(SM_CY - 1, 1))
 
