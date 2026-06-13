@@ -5,7 +5,7 @@ MCP Server for Windows desktop control. Works with **Claude Codex**, **Cline**, 
 ## 安装
 
 ```bash
-pip install reasonix-desktop-tools
+pip install git+https://github.com/Luohuayi-1/desktop-tools.git
 ```
 
 ## 注册到 Codex
