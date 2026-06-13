@@ -16,8 +16,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
-import time
-from typing import Optional
 
 import mcp.types as types
 
@@ -34,7 +32,6 @@ from .executor import (
 from .screenshot import capture_window
 from .windows_api import (
     get_active_window,
-    find_window,
     list_active_window_elements,
 )
 
@@ -47,23 +44,6 @@ def _get_window_context() -> tuple | None:
     if win is None:
         return None
     return (win, win.rect.left, win.rect.top)
-
-
-def _activate_window_by_title(title: str) -> bool:
-    """激活标题包含指定文字的窗口。"""
-    try:
-        import uiautomation as uia
-        for child in uia.GetRootControl().GetChildren():
-            try:
-                if child.Name and title.lower() in child.Name.lower():
-                    child.SetActive()
-                    child.SetFocus()
-                    return True
-            except Exception:
-                continue
-    except Exception:
-        pass
-    return False
 
 
 def tool_get_snapshot() -> list[types.Content]:
@@ -141,14 +121,22 @@ def tool_press_key(key: str) -> list[types.TextContent]:
 
 
 def tool_switch_window(title: str) -> list[types.TextContent]:
-    """切换到标题包含指定文字的窗口。"""
-    win = find_window(title_match=title)
-    if win is None:
-        return [types.TextContent(type="text", text=f"❌ 未找到窗口: {title}")]
-    ok = _activate_window_by_title(title)
-    if ok:
-        return [types.TextContent(type="text", text=f"✅ 已切换到: {win.title}")]
-    return [types.TextContent(type="text", text=f"❌ 无法激活窗口: {title}")]
+    """切换到标题包含指定文字的窗口。一次遍历完成查找+激活。"""
+    try:
+        import uiautomation as uia
+        for child in uia.GetRootControl().GetChildren():
+            try:
+                if child.Name and title.lower() in child.Name.lower():
+                    win_name = child.Name
+                    child.SetActive()
+                    child.SetFocus()
+                    return [types.TextContent(
+                        type="text", text=f"✅ 已切换到: {win_name}")]
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return [types.TextContent(type="text", text=f"❌ 未找到窗口: {title}")]
 
 
 def tool_list_windows(limit: int = 20) -> list[types.TextContent]:

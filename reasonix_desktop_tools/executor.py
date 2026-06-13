@@ -142,11 +142,14 @@ def click(x: int, y: int, button: str = "left") -> ActionResult:
         time.sleep(0.05)
 
         if button == "left":
-            _send_mouse_input(MOUSEEVENTF_LEFTDOWN | MOUSEEVENTF_LEFTUP)
+            ok = _send_mouse_input(MOUSEEVENTF_LEFTDOWN | MOUSEEVENTF_LEFTUP)
         elif button == "right":
-            _send_mouse_input(MOUSEEVENTF_RIGHTDOWN | MOUSEEVENTF_RIGHTUP)
+            ok = _send_mouse_input(MOUSEEVENTF_RIGHTDOWN | MOUSEEVENTF_RIGHTUP)
         else:
             return ActionResult(False, f"不支持的按键: {button}")
+
+        if not ok:
+            return ActionResult(False, "SendInput 失败（事件被拦截或权限不足）")
 
         logger.debug("click(%d, %d) %s", x, y, button)
         return ActionResult(True)
@@ -176,8 +179,10 @@ def type_text(x: int, y: int, text: str) -> ActionResult:
         time.sleep(0.1)
 
         # 逐个字符输入
-        for ch in text:
-            _type_char(ch)
+        for i, ch in enumerate(text):
+            if not _type_char(ch):
+                logger.error("type_text 第 %d 个字符输入失败: %r", i, ch)
+                return ActionResult(False, f"第 {i+1} 个字符输入失败")
             time.sleep(0.02)
 
         logger.debug("type_text(%d, %d, %s)", x, y, repr(text))
@@ -279,7 +284,8 @@ def hold_key(key: str) -> ActionResult:
             vk = _KEY_MAP.get(key, 0)
         if vk == 0:
             return ActionResult(False, f"未知按键: {key}")
-        _send_keyboard_input(vk, 0, 0)
+        if not _send_keyboard_input(vk, 0, 0):
+            return ActionResult(False, "SendInput 按键失败")
         logger.debug("hold_key(%s)", key)
         return ActionResult(True)
     except Exception as exc:
@@ -294,7 +300,8 @@ def release_key(key: str) -> ActionResult:
             vk = _KEY_MAP.get(key, 0)
         if vk == 0:
             return ActionResult(False, f"未知按键: {key}")
-        _send_keyboard_input(vk, 0, KEYEVENTF_KEYUP)
+        if not _send_keyboard_input(vk, 0, KEYEVENTF_KEYUP):
+            return ActionResult(False, "SendInput 释放失败")
         logger.debug("release_key(%s)", key)
         return ActionResult(True)
     except Exception as exc:
@@ -340,16 +347,19 @@ def press_key(key: str) -> ActionResult:
 
         # 按下全部修饰键
         for mod in mods:
-            _send_keyboard_input(mod, 0, 0)  # KEYEVENTF_KEYDOWN
+            if not _send_keyboard_input(mod, 0, 0):
+                return ActionResult(False, f"修饰键 {mod:#x} 按下失败")
 
         if vk:
-            _send_keyboard_input(vk, 0, 0)  # KEYDOWN
+            if not _send_keyboard_input(vk, 0, 0):
+                return ActionResult(False, f"主键 {vk:#x} 按下失败")
             time.sleep(0.03)
-            _send_keyboard_input(vk, 0, KEYEVENTF_KEYUP)  # KEYUP
+            if not _send_keyboard_input(vk, 0, KEYEVENTF_KEYUP):
+                return ActionResult(False, f"主键 {vk:#x} 释放失败")
 
         # 释放全部修饰键
         for mod in reversed(mods):
-            _send_keyboard_input(mod, 0, KEYEVENTF_KEYUP)
+            _send_keyboard_input(mod, 0, KEYEVENTF_KEYUP)  # 释放失败不阻断
 
         logger.debug("press_key(%s)", key)
         return ActionResult(True)
@@ -442,18 +452,17 @@ def _send_mouse_input(flags: int) -> bool:
     return result == 1
 
 
-def _type_char(ch: str) -> None:
-    """通过 SendInput 输入一个字符（Unicode 方式）。"""
+def _type_char(ch: str) -> bool:
+    """通过 SendInput 输入一个字符。返回是否成功。"""
     if ch == "\n":
-        # Enter 键
-        _send_keyboard_input(0x0D, 0, KEYEVENTF_KEYDOWN)
-        _send_keyboard_input(0x0D, 0, KEYEVENTF_KEYUP)
-        return
+        ok1 = _send_keyboard_input(0x0D, 0, KEYEVENTF_KEYDOWN)
+        ok2 = _send_keyboard_input(0x0D, 0, KEYEVENTF_KEYUP)
+        return ok1 and ok2
 
-    # Unicode 输入
     scan = ord(ch)
-    _send_keyboard_input(0, scan, KEYEVENTF_UNICODE | KEYEVENTF_KEYDOWN)
-    _send_keyboard_input(0, scan, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP)
+    ok1 = _send_keyboard_input(0, scan, KEYEVENTF_UNICODE | KEYEVENTF_KEYDOWN)
+    ok2 = _send_keyboard_input(0, scan, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP)
+    return ok1 and ok2
 
 
 def _send_keyboard_input(wVk: int, wScan: int, flags: int) -> bool:
