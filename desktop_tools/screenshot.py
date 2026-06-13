@@ -20,17 +20,13 @@ _dx_camera = None
 _dpi_scale = None
 
 
-def _get_dpi_scale() -> float:
-    """获取系统 DPI 缩放比例。100%=1.0, 125%=1.25, 150%=1.5。"""
+def _get_dpi_scale(hwnd: int = 0) -> float:
+    """获取指定窗口的 DPI 缩放比例。hwnd=0 用主屏。"""
     global _dpi_scale
-    if _dpi_scale is not None:
-        return _dpi_scale
     try:
         import ctypes
-        hwnd = ctypes.windll.user32.GetDesktopWindow()
-        dpi = ctypes.windll.user32.GetDpiForWindow(hwnd)
-        _dpi_scale = dpi / 96.0
-        return _dpi_scale
+        dpi = ctypes.windll.user32.GetDpiForWindow(hwnd or ctypes.windll.user32.GetDesktopWindow())
+        return dpi / 96.0
     except Exception:
         return 1.0
 
@@ -72,7 +68,8 @@ def capture_window(left: int, top: int,
         return None
 
     # DXcam 需要物理坐标（逻辑坐标 × DPI 缩放）
-    scale = _get_dpi_scale()
+    # 用 window 的 hwnd 获取其所在屏幕的 DPI
+    scale = _get_dpi_scale(0)  # TODO: 传入实际 hwnd
     phys_left = int(left * scale)
     phys_top = int(top * scale)
     phys_right = int(right * scale)

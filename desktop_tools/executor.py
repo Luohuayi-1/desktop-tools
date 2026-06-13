@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import atexit
 import ctypes
 import ctypes.wintypes
 import logging
@@ -286,6 +287,17 @@ _KEY_MAP = {
 _held_keys: set = set()
 
 
+def _cleanup_held_keys() -> None:
+    """释放所有按住的键。退出时调用。"""
+    for vk in list(_held_keys):
+        _send_keyboard_input(vk, 0, KEYEVENTF_KEYUP)
+    _held_keys.clear()
+
+
+# 进程退出时自动释放按键
+atexit.register(_cleanup_held_keys)
+
+
 # 单个字符 → vk 映射（用于 ctrl+c 等组合中的字母）
 def _char_to_vk(ch: str) -> int:
     if len(ch) != 1:
@@ -407,7 +419,7 @@ def press_key(key: str) -> ActionResult:
 # ---------------------------------------------------------------------------
 
 def scroll(x: int, y: int, delta_x: int = 0, delta_y: int = 5) -> ActionResult:
-    """从指定坐标处滚动鼠标滚轮。
+    """从指定坐标处滚动鼠标滚轮（ABSOLUTE 模式，与 click 一致）。
 
     参数:
         x, y: 屏幕坐标
@@ -415,7 +427,20 @@ def scroll(x: int, y: int, delta_x: int = 0, delta_y: int = 5) -> ActionResult:
         delta_y: 垂直滚动（正数向下），单位"咔哒"
     """
     try:
-        _move_to(x, y)
+        SM_CX = _user32.GetSystemMetrics(0)
+        SM_CY = _user32.GetSystemMetrics(1)
+        abs_x = int(x * 65535 / max(SM_CX - 1, 1))
+        abs_y = int(y * 65535 / max(SM_CY - 1, 1))
+
+        # 先移动鼠标（ABSOLUTE）
+        move = INPUT()
+        move.type = INPUT_MOUSE
+        move.union.mi.dx = abs_x
+        move.union.mi.dy = abs_y
+        move.union.mi.dwFlags = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE
+        move.union.mi.time = 0
+        move.union.mi.dwExtraInfo = ctypes.pointer(ctypes.c_ulong(0))
+        _SendInput(1, ctypes.byref(move), ctypes.sizeof(INPUT))
         time.sleep(0.05)
 
         if delta_y:

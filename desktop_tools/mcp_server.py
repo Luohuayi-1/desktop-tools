@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import asyncio
+import ctypes
 import logging
 import sys
 
@@ -74,7 +75,6 @@ def _bring_target_front(hwnd: int) -> bool:
     """前置目标窗口。返回窗口是否有效（未被销毁）。"""
     if not hwnd:
         return False
-    import ctypes
     if not ctypes.windll.user32.IsWindow(hwnd):
         return False
     bring_to_front(hwnd)
@@ -265,6 +265,7 @@ def tool_release_key(key: str) -> list[types.TextContent]:
 # ---------------------------------------------------------------------------
 
 _OP_LOG = logging.getLogger("desktop.ops")
+_OP_LOG.setLevel(logging.INFO)
 
 
 def _log_call(tool_name: str, args: dict, result: str) -> None:
@@ -301,6 +302,10 @@ def _run_kill_listener() -> None:
                 if ctypes.windll.user32.GetMessageW(ctypes.byref(msg), None, 0, 0):
                     if msg.message == 0x0312:  # WM_HOTKEY
                         logger.warning("⚠️ 紧急终止: Ctrl+Alt+K 触发")
+                        from .executor import _cleanup_held_keys
+                        _cleanup_held_keys()
+                        import sys
+                        sys.stdout.flush()
                         import os
                         os._exit(0)
                     ctypes.windll.user32.TranslateMessage(ctypes.byref(msg))
@@ -359,6 +364,28 @@ def _startup_checks() -> None:
 
 
 # ---------------------------------------------------------------------------
+# find_by_name 工具
+# ---------------------------------------------------------------------------
+
+def tool_find_by_name(name: str, role: str = "") -> list[types.TextContent]:
+    """在当前窗口按名称查找控件，返回坐标。"""
+    from .windows_api import find_element_by_name
+    from .windows_api import get_active_window
+    win = get_active_window()
+    if win is None:
+        return [types.TextContent(type="text", text="❌ 当前无激活窗口")]
+    elem = find_element_by_name(win.title, name, role or None)
+    if elem is None:
+        return [types.TextContent(type="text", text=f"❌ 未找到控件: {name}")]
+    rx = elem.rect.center_x - win.rect.left
+    ry = elem.rect.center_y - win.rect.top
+    return [types.TextContent(
+        type="text",
+        text=f"✅ 找到 [{elem.role}] \"{elem.name}\" @ 窗口相对坐标 ({rx}, {ry})"
+    )]
+
+
+# ---------------------------------------------------------------------------
 # MCP Server
 # ---------------------------------------------------------------------------
 
@@ -404,6 +431,7 @@ def main() -> None:
                 "switch_window": lambda: tool_switch_window(arguments["title"]),
                 "list_windows": lambda: tool_list_windows(),
                 "scroll": lambda: tool_scroll(arguments["x"], arguments["y"], arguments.get("delta_x", 0), arguments.get("delta_y", 5)),
+                "find_by_name": lambda: tool_find_by_name(arguments["name"], arguments.get("role", "")),
                 "wait": lambda: tool_wait(arguments["ms"]),
             }
             fn = fns.get(name)
