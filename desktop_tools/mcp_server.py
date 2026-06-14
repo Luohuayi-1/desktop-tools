@@ -76,12 +76,15 @@ def _get_ctx():
                 ox, oy = win.rect.left, win.rect.top
         else:
             ox, oy = win.rect.left, win.rect.top
-    # 获取 UIA 控件引用供 list_active_window_elements 复用
+    # 获取 UIA 控件引用
     uia = _import_uia()
     win_control = None
     if uia:
         try:
-            focused = uia.GetFocusedControl()
+            if _last_target_hwnd:
+                win_control = uia.ControlFromHandle(_last_target_hwnd)
+            else:
+                focused = uia.GetFocusedControl()
             root = uia.GetRootControl()
             win_control = _find_top_level_window(focused, root)
         except Exception:
@@ -89,30 +92,6 @@ def _get_ctx():
     ctx = (win, ox, oy, hwnd, win_control)
     _ctx = ctx
     return ctx
-    if win is None:
-        _ctx = None
-        return None
-    # 使用客户区坐标（不含标题栏+边框）
-    from .windows_api import get_client_rect
-    cr = get_client_rect(win.hwnd)
-    if cr:
-        ox, oy = cr['client_left'], cr['client_top']
-    else:
-        ox, oy = win.rect.left, win.rect.top
-    # 获取 UIA 控件引用供 list_active_window_elements 复用
-    uia = _import_uia()
-    win_control = None
-    if uia:
-        try:
-            focused = uia.GetFocusedControl()
-            root = uia.GetRootControl()
-            win_control = _find_top_level_window(focused, root)
-        except Exception:
-            pass
-    ctx = (win, ox, oy, win.hwnd, win_control)
-    _ctx = ctx
-    return ctx
-
 
 def _bring_target_front(hwnd: int) -> bool:
     """前置目标窗口。返回窗口是否有效（未被销毁）。"""
@@ -136,65 +115,68 @@ def _bring_target_front(hwnd: int) -> bool:
 
 
 def _highlight_window(hwnd: int, color: int = 0x0000FF, thickness: int = 4, duration: float = 1.5) -> None:
-    """在目标窗口四周边框绘制彩色高亮（描边），duration 秒后自动消失。
-
-    color: BGR 格式 0x00BBGGRR，默认 0x0000FF = 红色
-    """
+    """在目标窗口四周绘制红色高亮边框（overlay 分层窗口），duration 秒后自动销毁。"""
     try:
         import threading
         import ctypes
         from ctypes import wintypes
 
-        # 获取窗口外框
         frame = wintypes.RECT()
         ctypes.windll.dwmapi.DwmGetWindowAttribute(
             ctypes.c_void_p(hwnd), 9,
             ctypes.byref(frame), ctypes.sizeof(frame)
         )
-        left, top, right, bottom = frame.left, frame.top, frame.right, frame.bottom
-        w, h = right - left, bottom - top
+        l, t, r, b = frame.left, frame.top, frame.right, frame.bottom
+        w, h = r - l, b - t
+        if w <= 0 or h <= 0:
+            return
 
-        # 创建透明点击穿透的描边窗口
-        WS_EX_LAYERED = 0x80000
-        WS_EX_TRANSPARENT = 0x20
-        WS_EX_TOPMOST = 0x8
-        WS_EX_TOOLWINDOW = 0x80
-        WS_POPUP = 0x80000000
+        cls_name = "DTHighlight"
+        mod = ctypes.windll.kernel32.GetModuleHandleW(None)
+        try:
+            ctypes.windll.user32.RegisterClassW(
+                wintypes.WNDCLASS(
+                    style=0, lpfnWndProc=ctypes.WINFUNCTYPE(
+                        ctypes.c_long, ctypes.c_void_p, ctypes.c_uint, ctypes.c_void_p, ctypes.c_void_p
+                    )(lambda *a: 0),
+                    hInstance=mod, lpszClassName=cls_name
+                )
+            )
+        except Exception:
+            pass
 
-        hdc = ctypes.windll.user32.GetDC(ctypes.c_void_p(0xFFFF))  # HWND_DESKTOP
+        overlay = ctypes.windll.user32.CreateWindowExW(
+            0x80088,
+            cls_name, None, 0x80000000,
+            l, t, w, h, None, None, mod, None
+        )
+        if not overlay:
+            return
 
-        # 在窗口四边画矩形
+        ctypes.windll.user32.SetLayeredWindowAttributes(overlay, 0, 200, 2)
+        ctypes.windll.user32.ShowWindow(overlay, 1)
+
+        hdc = ctypes.windll.user32.GetDC(overlay)
         pen = ctypes.windll.gdi32.CreatePen(0, thickness, color)
         old_pen = ctypes.windll.gdi32.SelectObject(hdc, pen)
-        brush = ctypes.windll.gdi32.GetStockObject(5)  # NULL_BRUSH
+        brush = ctypes.windll.gdi32.GetStockObject(5)
         old_brush = ctypes.windll.gdi32.SelectObject(hdc, brush)
-
-        ctypes.windll.gdi32.Rectangle(hdc, left, top, right, bottom)
-
+        ctypes.windll.gdi32.Rectangle(hdc, 0, 0, w, h)
         ctypes.windll.gdi32.SelectObject(hdc, old_pen)
         ctypes.windll.gdi32.SelectObject(hdc, old_brush)
         ctypes.windll.gdi32.DeleteObject(pen)
-        ctypes.windll.user32.ReleaseDC(ctypes.c_void_p(0xFFFF), hdc)
+        ctypes.windll.user32.ReleaseDC(overlay, hdc)
 
-        # 延迟后自动清除：在相同位置画一遍背景色（简单但有效）
         def _clear():
             import time
             time.sleep(duration)
             try:
-                hdc2 = ctypes.windll.user32.GetDC(ctypes.c_void_p(0xFFFF))
-                pen2 = ctypes.windll.gdi32.CreatePen(0, thickness, 0x000000)
-                ctypes.windll.gdi32.SelectObject(hdc2, pen2)
-                brush2 = ctypes.windll.gdi32.GetStockObject(5)
-                ctypes.windll.gdi32.SelectObject(hdc2, brush2)
-                ctypes.windll.gdi32.Rectangle(hdc2, left, top, right, bottom)
-                ctypes.windll.gdi32.DeleteObject(pen2)
-                ctypes.windll.user32.ReleaseDC(ctypes.c_void_p(0xFFFF), hdc2)
+                ctypes.windll.user32.DestroyWindow(overlay)
             except Exception:
                 pass
 
         threading.Thread(target=_clear, daemon=True).start()
-
-        logger.debug("highlight_window(%d) %dx%d 红色描边 %.1fs", hwnd, w, h, duration)
+        logger.debug("highlight_window(%d) overlay %dx%d %.1fs", hwnd, w, h, duration)
     except Exception as exc:
         logger.debug("highlight_window 失败: %s", exc)
 
