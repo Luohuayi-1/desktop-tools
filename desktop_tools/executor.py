@@ -494,6 +494,55 @@ def scroll(x: int, y: int, delta_x: int = 0, delta_y: int = 5) -> ActionResult:
         return ActionResult(False, str(exc))
 
 
+def drag(from_x: int, from_y: int, to_x: int, to_y: int) -> ActionResult:
+    """从 (from_x, from_y) 拖拽到 (to_x, to_y)。"""
+    try:
+        dpi = _user32.GetDpiForWindow(_user32.GetDesktopWindow())
+        scale = dpi / 96.0
+        if scale != 1.0:
+            from_x = int(from_x * scale)
+            from_y = int(from_y * scale)
+            to_x = int(to_x * scale)
+            to_y = int(to_y * scale)
+        SM_CX = _user32.GetSystemMetrics(78)
+        SM_CY = _user32.GetSystemMetrics(79)
+        abs_fx = int(from_x * 65535 / max(SM_CX - 1, 1))
+        abs_fy = int(from_y * 65535 / max(SM_CY - 1, 1))
+        abs_tx = int(to_x * 65535 / max(SM_CX - 1, 1))
+        abs_ty = int(to_y * 65535 / max(SM_CY - 1, 1))
+
+        # 移动 + 按下
+        m = INPUT(); m.type = INPUT_MOUSE
+        m.union.mi.dx = abs_fx; m.union.mi.dy = abs_fy
+        m.union.mi.dwFlags = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE
+        _SendInput(1, ctypes.byref(m), ctypes.sizeof(INPUT))
+        time.sleep(0.05)
+
+        d = INPUT(); d.type = INPUT_MOUSE
+        d.union.mi.dx = abs_fx; d.union.mi.dy = abs_fy
+        d.union.mi.dwFlags = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_LEFTDOWN
+        _SendInput(1, ctypes.byref(d), ctypes.sizeof(INPUT))
+        time.sleep(0.05)
+
+        # 移动到目标 + 释放
+        m2 = INPUT(); m2.type = INPUT_MOUSE
+        m2.union.mi.dx = abs_tx; m2.union.mi.dy = abs_ty
+        m2.union.mi.dwFlags = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE
+        _SendInput(1, ctypes.byref(m2), ctypes.sizeof(INPUT))
+        time.sleep(0.05)
+
+        u = INPUT(); u.type = INPUT_MOUSE
+        u.union.mi.dx = abs_tx; u.union.mi.dy = abs_ty
+        u.union.mi.dwFlags = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_LEFTUP
+        _SendInput(1, ctypes.byref(u), ctypes.sizeof(INPUT))
+
+        logger.debug("drag(%d,%d → %d,%d)", from_x, from_y, to_x, to_y)
+        return ActionResult(True)
+    except Exception as exc:
+        logger.error("drag 失败: %s", exc)
+        return ActionResult(False, str(exc))
+
+
 def _send_mouse_wheel(amount: int) -> bool:
     """发送垂直滚轮事件。返回是否成功。"""
     inp = INPUT()
