@@ -85,12 +85,8 @@ def capture_window(left: int, top: int,
 
 
 def _encode_img(img, quality: int) -> Optional[tuple[str, str]]:
-    """将 PIL Image 编码为 base64（缩放到 50% 以减少 token）。返回 (base64, mime_type)。"""
+    """将 PIL Image 编码为 base64。返回 (base64, mime_type)。"""
     try:
-        from PIL import Image as PILImage
-        w, h = img.size
-        if w > 800:
-            img = img.resize((w // 2, h // 2), PILImage.LANCZOS)
         buf = io.BytesIO()
         if quality < 95:
             img = img.convert("RGB")
