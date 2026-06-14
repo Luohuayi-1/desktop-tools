@@ -149,7 +149,7 @@ def _highlight_window(hwnd: int, color: int = 0x0000FF, thickness: int = 4, dura
             pass
 
         overlay = ctypes.windll.user32.CreateWindowExW(
-            0x80088,
+            0x800A8,  # WS_EX_LAYERED|TRANSPARENT|TOOLWINDOW|NOACTIVATE
             cls_name, None, 0x80000000,
             l, t, w, h, None, None, mod, None
         )
