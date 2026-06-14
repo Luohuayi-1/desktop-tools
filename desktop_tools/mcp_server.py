@@ -85,6 +85,15 @@ def _bring_target_front(hwnd: int) -> bool:
     if not ctypes.windll.user32.IsWindow(hwnd):
         return False
     bring_to_front(hwnd)
+    # 闪烁 TopMost 绕过 Windows 前台窗口防抖
+    HWND_TOPMOST = -1
+    HWND_NOTOPMOST = -2
+    SWP_NOMOVE = 0x0002
+    SWP_NOSIZE = 0x0001
+    ctypes.windll.user32.SetWindowPos(ctypes.c_void_p(hwnd), HWND_TOPMOST,
+        0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE)
+    ctypes.windll.user32.SetWindowPos(ctypes.c_void_p(hwnd), HWND_NOTOPMOST,
+        0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE)
     # 高亮描边显示当前操作的窗口
     _highlight_window(hwnd)
     return True
