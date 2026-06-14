@@ -82,7 +82,10 @@ def _get_ctx():
     if uia:
         try:
             if _last_target_hwnd:
-                win_control = uia.ControlFromHandle(_last_target_hwnd)
+                try:
+                    win_control = uia.ControlFromHandle(_last_target_hwnd)
+                except Exception:
+                    win_control = None
             else:
                 focused = uia.GetFocusedControl()
             root = uia.GetRootControl()
@@ -171,7 +174,7 @@ def _highlight_window(hwnd: int, color: int = 0x0000FF, thickness: int = 4, dura
             import time
             time.sleep(duration)
             try:
-                ctypes.windll.user32.DestroyWindow(overlay)
+                ctypes.windll.user32.PostMessageW(overlay, 0x0010, 0, 0)  # WM_CLOSE
             except Exception:
                 pass
 
