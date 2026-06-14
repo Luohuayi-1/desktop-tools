@@ -160,12 +160,6 @@ def click(x: int, y: int, button: str = "left") -> ActionResult:
         button: "left" / "right"
     """
     try:
-        # 根据目标窗口所在屏幕的 DPI 缩放坐标
-        dpi = _user32.GetDpiForWindow(_user32.GetDesktopWindow())
-        scale = dpi / 96.0
-        if scale != 1.0:
-            x = int(x * scale)
-            y = int(y * scale)
         SM_CX = _user32.GetSystemMetrics(78)  # CXVIRTUALSCREEN
         SM_CY = _user32.GetSystemMetrics(79)  # CYVIRTUALSCREEN
         abs_x = int(x * 65535 / max(SM_CX - 1, 1))
@@ -438,10 +432,12 @@ def press_key(key: str) -> ActionResult:
             if not _send_keyboard_input(vk, 0, KEYEVENTF_KEYUP):
                 return ActionResult(False, f"主键 {vk:#x} 释放失败")
 
-        # 释放全部修饰键（释放失败记日志不阻断——键盘状态可能受影响）
+        # 释放全部修饰键（重试一次）
         for mod in reversed(mods):
             if not _send_keyboard_input(mod, 0, KEYEVENTF_KEYUP):
-                logger.warning("修饰键 0x%x 释放失败，可能影响后续键盘输入", mod)
+                time.sleep(0.01)
+                if not _send_keyboard_input(mod, 0, KEYEVENTF_KEYUP):
+                    logger.warning("修饰键 0x%x 释放失败，键盘可能卡键", mod)
 
         logger.debug("press_key(%s)", key)
         return ActionResult(True)
@@ -463,11 +459,6 @@ def scroll(x: int, y: int, delta_x: int = 0, delta_y: int = 5) -> ActionResult:
         delta_y: 垂直滚动（正数向下），单位"咔哒"
     """
     try:
-        dpi = _user32.GetDpiForWindow(_user32.GetDesktopWindow())
-        scale = dpi / 96.0
-        if scale != 1.0:
-            x = int(x * scale)
-            y = int(y * scale)
         SM_CX = _user32.GetSystemMetrics(78)  # CXVIRTUALSCREEN
         SM_CY = _user32.GetSystemMetrics(79)  # CYVIRTUALSCREEN
         abs_x = int(x * 65535 / max(SM_CX - 1, 1))
