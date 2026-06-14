@@ -88,6 +88,19 @@ def _bring_target_front(hwnd: int) -> bool:
     return True
 
 
+def _scale_coords(hwnd: int, x: int, y: int) -> tuple[int, int]:
+    """按目标窗口所在屏幕的 DPI 缩放坐标。"""
+    try:
+        dpi = ctypes.windll.user32.GetDpiForWindow(ctypes.c_void_p(hwnd))
+        scale = dpi / 96.0
+        if scale != 1.0:
+            x = int(x * scale)
+            y = int(y * scale)
+    except Exception:
+        pass
+    return (x, y)
+
+
 def tool_get_snapshot() -> list[types.Content]:
     """快照：窗口信息 + accessibility 树 + 截图（ImageContent）。"""
     ctx = _get_ctx()
@@ -155,7 +168,8 @@ def tool_double_click(x: int, y: int) -> list[types.TextContent]:
         return [types.TextContent(type="text", text="❌ 当前无激活窗口")]
     win, ox, oy, hwnd, _ = ctx
     _bring_target_front(hwnd)
-    result = exec_double_click(ox + x, oy + y)
+    sx, sy = _scale_coords(hwnd, ox + x, oy + y)
+    result = exec_double_click(sx, sy)
     if not result.success:
         return [types.TextContent(type="text", text=f"❌ 双击失败: {result.message}")]
     return [types.TextContent(type="text", text=f"✅ 已双击 ({x}, {y})")]
