@@ -167,4 +167,6 @@ def capture_full_screen(quality: int = 85) -> Optional[tuple[str, str]]:
     except Exception:
         pass
 
+    # PIL ImageGrab.grab(bbox=(0,0,large,large)) 自动裁剪到实际屏幕大小，
+    # 传超大值相当于"从(0,0)截取到屏幕右下角"，等价于不传 bbox 的全屏截取。
     return _capture_pil(0, 0, 99999, 99999, quality)

@@ -46,15 +46,15 @@ from .windows_api import (
 
 logger = logging.getLogger(__name__)
 
-_WIN_CACHE = None  # (win, ox, oy, hwnd, win_control)
+_CTX = None  # (win, ox, oy, hwnd, win_control)，每次 _get_ctx 重新计算不跨请求缓存
 
 
 def _get_ctx():
     """获取当前窗口上下文。缓存避免重复调用 UIA。"""
-    global _WIN_CACHE
+    global _CTX
     win = get_active_window()
     if win is None:
-        _WIN_CACHE = None
+        _CTX = None
         return None
     # 使用客户区坐标（不含标题栏+边框）
     from .windows_api import get_client_rect
@@ -74,7 +74,7 @@ def _get_ctx():
         except Exception:
             pass
     ctx = (win, ox, oy, win.hwnd, win_control)
-    _WIN_CACHE = ctx
+    _CTX = ctx
     return ctx
 
 
@@ -118,7 +118,12 @@ def tool_get_snapshot() -> list[types.Content]:
         parts.append("\n(该窗口未暴露可交互控件信息，请查看截图自行判断)")
 
     text_content = types.TextContent(type="text", text="\n".join(parts))
-    screenshot = capture_window(ox, oy, ox + win.rect.width, oy + win.rect.height, hwnd=hwnd)
+    # 用客户区宽高截取截图
+    from .windows_api import get_client_rect
+    _cr = get_client_rect(hwnd)
+    sw = _cr['client_width'] if _cr else win.rect.width
+    sh = _cr['client_height'] if _cr else win.rect.height
+    screenshot = capture_window(ox, oy, ox + sw, oy + sh, hwnd=hwnd)
     if screenshot:
         b64, mime = screenshot
         return [text_content, types.ImageContent(type="image", data=b64, mimeType=mime)]

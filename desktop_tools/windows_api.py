@@ -48,11 +48,6 @@ def get_client_rect(hwnd: int):
     try:
         import ctypes
         from ctypes import wintypes
-        frame = wintypes.RECT()
-        ctypes.windll.dwmapi.DwmGetWindowAttribute(
-            ctypes.c_void_p(hwnd), 9,
-            ctypes.byref(frame), ctypes.sizeof(frame)
-        )
         cr = wintypes.RECT()
         ctypes.windll.user32.GetClientRect(ctypes.c_void_p(hwnd), ctypes.byref(cr))
         pt = wintypes.POINT(cr.left, cr.top)

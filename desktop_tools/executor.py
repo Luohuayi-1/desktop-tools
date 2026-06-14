@@ -187,7 +187,6 @@ def click(x: int, y: int, button: str = "left") -> ActionResult:
         move.union.mi.dwExtraInfo = ctypes.pointer(ctypes.c_ulong(0))
         ok = _SendInput(1, ctypes.byref(move), ctypes.sizeof(INPUT)) == 1
         
-        import time
         time.sleep(0.01)
 
         down = INPUT()
@@ -485,7 +484,8 @@ def scroll(x: int, y: int, delta_x: int = 0, delta_y: int = 5) -> ActionResult:
         move.union.mi.dwFlags = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE
         move.union.mi.time = 0
         move.union.mi.dwExtraInfo = ctypes.pointer(ctypes.c_ulong(0))
-        _SendInput(1, ctypes.byref(move), ctypes.sizeof(INPUT))
+        if _SendInput(1, ctypes.byref(move), ctypes.sizeof(INPUT)) != 1:
+            return ActionResult(False, "滚动前鼠标移动失败")
         time.sleep(0.05)
 
         if delta_y:
@@ -538,7 +538,12 @@ def _send_mouse_hwheel(amount: int) -> bool:
 # ---------------------------------------------------------------------------
 
 def _move_to(x: int, y: int) -> bool:
-    """移动鼠标到绝对屏幕坐标。返回是否成功。"""
+    """移动鼠标到绝对屏幕坐标（含 DPI 缩放）。返回是否成功。"""
+    dpi = _user32.GetDpiForWindow(_user32.GetDesktopWindow())
+    scale = dpi / 96.0
+    if scale != 1.0:
+        x = int(x * scale)
+        y = int(y * scale)
     return bool(_SetCursorPos(x, y))
 
 
