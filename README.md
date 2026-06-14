@@ -27,11 +27,11 @@ pip install git+https://github.com/Luohuayi-1/desktop-tools.git
 
 ```bash
 # 直接启动看自检信息
-python -m reasonix_desktop_tools.mcp_server
+python -m desktop_tools.mcp_server
 
 # 输出示例:
 # +------------------------------------------
-# | reasonix-desktop-tools v0.3
+# | desktop-tools v0.3
 # | DPI: 144 (150%)
 # | 显示器: 2
 # | 虚拟桌面: (0,0) 3840x2160
@@ -47,7 +47,7 @@ python -m reasonix_desktop_tools.mcp_server
 
 ```bash
 claude mcp add --transport stdio --scope project desktop ^
-  -- python -m reasonix_desktop_tools.mcp_server
+  -- python -m desktop_tools.mcp_server
 ```
 
 然后在 Codex 中测试：
@@ -65,7 +65,7 @@ claude mcp add --transport stdio --scope project desktop ^
   "mcpServers": {
     "desktop": {
       "command": "python",
-      "args": ["-m", "reasonix_desktop_tools.mcp_server"]
+      "args": ["-m", "desktop_tools.mcp_server"]
     }
   }
 }
@@ -274,7 +274,7 @@ x 向右增加，y 向下增加
 ```
 # 设置日志级别为 DEBUG 查看更多信息
 set LOG_LEVEL=DEBUG
-python -m reasonix_desktop_tools.mcp_server
+python -m desktop_tools.mcp_server
 ```
 
 日志输出示例：
@@ -320,7 +320,7 @@ python tests/smoke_test.py
 ```
 原因: MCP Server 未正确注册
 解决: 
-  1. 在终端中直接运行 python -m reasonix_desktop_tools.mcp_server 看是否报错
+  1. 在终端中直接运行 python -m desktop_tools.mcp_server 看是否报错
   2. 确认 Agent 的 MCP 配置路径正确
   3. 重启 Agent
 ```
