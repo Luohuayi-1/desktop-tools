@@ -46,6 +46,7 @@ from .windows_api import (
 
 logger = logging.getLogger(__name__)
 
+_last_target_hwnd = 0  # 上次 switch_window/find_by_name 的目标窗口
 _ctx = None  # (win, ox, oy, hwnd, win_control)，每次 _get_ctx 重新计算不跨请求缓存
 
 
@@ -53,6 +54,41 @@ def _get_ctx():
     """获取当前窗口上下文。每次重新检测，不跨请求缓存。"""
     global _ctx
     win = get_active_window()
+    if win is None:
+        _ctx = None
+        return None
+    # 优先用 _last_target_hwnd
+    hwnd = _last_target_hwnd or win.hwnd
+    from .windows_api import get_client_rect
+    cr = get_client_rect(hwnd)
+    if cr:
+        ox, oy = cr['client_left'], cr['client_top']
+    else:
+        # 若 _last_target_hwnd 有效，获取其 rect
+        if _last_target_hwnd:
+            try:
+                import ctypes
+                from ctypes import wintypes
+                r = wintypes.RECT()
+                ctypes.windll.user32.GetWindowRect(ctypes.c_void_p(_last_target_hwnd), ctypes.byref(r))
+                ox, oy = r.left, r.top
+            except Exception:
+                ox, oy = win.rect.left, win.rect.top
+        else:
+            ox, oy = win.rect.left, win.rect.top
+    # 获取 UIA 控件引用供 list_active_window_elements 复用
+    uia = _import_uia()
+    win_control = None
+    if uia:
+        try:
+            focused = uia.GetFocusedControl()
+            root = uia.GetRootControl()
+            win_control = _find_top_level_window(focused, root)
+        except Exception:
+            pass
+    ctx = (win, ox, oy, hwnd, win_control)
+    _ctx = ctx
+    return ctx
     if win is None:
         _ctx = None
         return None
@@ -299,6 +335,7 @@ def tool_press_key(key: str) -> list[types.TextContent]:
 
 def tool_switch_window(title: str) -> list[types.TextContent]:
     """切换到标题包含指定文字的窗口。多候选时返回列表让 Agent 选。"""
+    global _last_target_hwnd
     try:
         import uiautomation as uia
         matches = []
@@ -313,6 +350,7 @@ def tool_switch_window(title: str) -> list[types.TextContent]:
             return [types.TextContent(type="text", text=f"❌ 未找到窗口: {title}")]
         if len(matches) == 1:
             name, child = matches[0]
+            _last_target_hwnd = child.NativeWindowHandle
             child.SetActive()
             child.SetFocus()
             return [types.TextContent(type="text", text=f"✅ 已切换到: {name}")]
@@ -322,6 +360,29 @@ def tool_switch_window(title: str) -> list[types.TextContent]:
                + "\n".join(f"  - \"{n}\"" for n in names))
         return [types.TextContent(type="text", text=msg)]
     except Exception as exc:
+        # EnumWindows 后备
+        try:
+            import ctypes
+            from ctypes import wintypes
+            results = []
+            def enum_cb(hwnd, _):
+                if ctypes.windll.user32.IsWindowVisible(hwnd):
+                    length = ctypes.windll.user32.GetWindowTextLengthW(hwnd)
+                    if length:
+                        buf = ctypes.create_unicode_buffer(length + 1)
+                        ctypes.windll.user32.GetWindowTextW(hwnd, buf, length + 1)
+                        if title.lower() in buf.value.lower():
+                            results.append((buf.value, hwnd))
+                return True
+            ENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, ctypes.c_int)
+            ctypes.windll.user32.EnumWindows(ENUMPROC(enum_cb), 0)
+            if results:
+                name, hw = results[0]
+                _last_target_hwnd = hw
+                ctypes.windll.user32.SetForegroundWindow(hw)
+                return [types.TextContent(type="text", text=f"✅ 已切换到(后备): {name}")]
+        except Exception:
+            pass
         return [types.TextContent(type="text", text=f"❌ 切换失败: {exc}")]
 
 

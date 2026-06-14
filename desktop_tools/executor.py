@@ -240,7 +240,8 @@ def type_text(x: int, y: int, text: str) -> ActionResult:
             if not _type_char(ch):
                 logger.error("type_text 第 %d 个字符输入失败: %r", i, ch)
                 return ActionResult(False, f"第 {i+1} 个字符输入失败")
-            time.sleep(0.02)
+            # CJK 字符间隔加倍
+            time.sleep(0.05 if ord(ch) > 0x2E80 else 0.02)
 
         logger.debug("type_text(%d, %d, %s)", x, y, repr(text))
         return ActionResult(True)
