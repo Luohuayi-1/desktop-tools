@@ -46,15 +46,15 @@ from .windows_api import (
 
 logger = logging.getLogger(__name__)
 
-_CTX = None  # (win, ox, oy, hwnd, win_control)，每次 _get_ctx 重新计算不跨请求缓存
+_ctx = None  # (win, ox, oy, hwnd, win_control)，每次 _get_ctx 重新计算不跨请求缓存
 
 
 def _get_ctx():
     """获取当前窗口上下文。缓存避免重复调用 UIA。"""
-    global _CTX
+    global _ctx
     win = get_active_window()
     if win is None:
-        _CTX = None
+        _ctx = None
         return None
     # 使用客户区坐标（不含标题栏+边框）
     from .windows_api import get_client_rect
@@ -74,7 +74,7 @@ def _get_ctx():
         except Exception:
             pass
     ctx = (win, ox, oy, win.hwnd, win_control)
-    _CTX = ctx
+    _ctx = ctx
     return ctx
 
 

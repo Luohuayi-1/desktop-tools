@@ -131,23 +131,25 @@ _VIRTUAL_HEIGHT = _user32.GetSystemMetrics(_SM_CYVIRTUALSCREEN)
 # 公开接口
 # ---------------------------------------------------------------------------
 
-def bring_to_front(hwnd: int) -> None:
-    """确保窗口在最前（通过 AttachThreadInput 避免 UIPI 限制）。"""
+def bring_to_front(hwnd: int) -> bool:
+    """确保窗口在最前。返回是否成功。"""
     try:
         foreground = _user32.GetForegroundWindow()
         if foreground == hwnd:
-            return
-        # 获取两个窗口的线程 ID
+            return True
         fg_tid = _user32.GetWindowThreadProcessId(foreground, None)
         my_tid = _user32.GetWindowThreadProcessId(hwnd, None)
-        # 附加到前台窗口的输入队列
         _user32.AttachThreadInput(my_tid, fg_tid, True)
-        _user32.SetForegroundWindow(hwnd)
+        ok = _user32.SetForegroundWindow(hwnd)
         _user32.SetActiveWindow(hwnd)
         _user32.BringWindowToTop(hwnd)
         _user32.AttachThreadInput(my_tid, fg_tid, False)
-    except Exception:
-        pass
+        if not ok:
+            logger.warning("bring_to_front(%d) SetForegroundWindow 失败", hwnd)
+        return bool(ok)
+    except Exception as exc:
+        logger.warning("bring_to_front(%d) 异常: %s", hwnd, exc)
+        return False
 
 
 def click(x: int, y: int, button: str = "left") -> ActionResult:
@@ -169,12 +171,7 @@ def click(x: int, y: int, button: str = "left") -> ActionResult:
         abs_x = int(x * 65535 / max(SM_CX - 1, 1))
         abs_y = int(y * 65535 / max(SM_CY - 1, 1))
 
-        flags = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE
-        if button == "left":
-            flags |= MOUSEEVENTF_LEFTDOWN | MOUSEEVENTF_LEFTUP
-        elif button == "right":
-            flags |= MOUSEEVENTF_RIGHTDOWN | MOUSEEVENTF_RIGHTUP
-        else:
+        if button not in ("left", "right"):
             return ActionResult(False, f"不支持的按键: {button}")
 
         # 拆分为 3 次 SendInput：移动 → 按下 → 释放
@@ -259,7 +256,7 @@ def type_text(x: int, y: int, text: str) -> ActionResult:
 
 
 def move_to(x: int, y: int) -> ActionResult:
-    """仅移动鼠标到坐标。"""
+    """仅移动鼠标到坐标。DPI 由 _move_to 内部处理。"""
     try:
         _move_to(x, y)
         return ActionResult(True)

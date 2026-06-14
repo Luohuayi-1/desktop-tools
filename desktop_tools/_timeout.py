@@ -37,7 +37,7 @@ def _uninit_com() -> None:
 def timeout_collect(
     win_hwnd: int,
     result: list[ElementInfo],
-    max_depth: int = 3,
+    max_depth: int = 6,
     max_seconds: float = 2.0,
 ) -> None:
     """在超时保护下收集 UIA 控件。
