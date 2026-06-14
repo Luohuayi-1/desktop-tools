@@ -85,7 +85,73 @@ def _bring_target_front(hwnd: int) -> bool:
     if not ctypes.windll.user32.IsWindow(hwnd):
         return False
     bring_to_front(hwnd)
+    # 高亮描边显示当前操作的窗口
+    _highlight_window(hwnd)
     return True
+
+
+def _highlight_window(hwnd: int, color: int = 0x0000FF, thickness: int = 4, duration: float = 1.5) -> None:
+    """在目标窗口四周边框绘制彩色高亮（描边），duration 秒后自动消失。
+
+    color: BGR 格式 0x00BBGGRR，默认 0x0000FF = 红色
+    """
+    try:
+        import threading
+        import ctypes
+        from ctypes import wintypes
+
+        # 获取窗口外框
+        frame = wintypes.RECT()
+        ctypes.windll.dwmapi.DwmGetWindowAttribute(
+            ctypes.c_void_p(hwnd), 9,
+            ctypes.byref(frame), ctypes.sizeof(frame)
+        )
+        left, top, right, bottom = frame.left, frame.top, frame.right, frame.bottom
+        w, h = right - left, bottom - top
+
+        # 创建透明点击穿透的描边窗口
+        WS_EX_LAYERED = 0x80000
+        WS_EX_TRANSPARENT = 0x20
+        WS_EX_TOPMOST = 0x8
+        WS_EX_TOOLWINDOW = 0x80
+        WS_POPUP = 0x80000000
+
+        hdc = ctypes.windll.user32.GetDC(ctypes.c_void_p(0xFFFF))  # HWND_DESKTOP
+
+        # 在窗口四边画矩形
+        pen = ctypes.windll.gdi32.CreatePen(0, thickness, color)
+        old_pen = ctypes.windll.gdi32.SelectObject(hdc, pen)
+        brush = ctypes.windll.gdi32.GetStockObject(5)  # NULL_BRUSH
+        old_brush = ctypes.windll.gdi32.SelectObject(hdc, brush)
+
+        ctypes.windll.gdi32.Rectangle(hdc, left, top, right, bottom)
+
+        ctypes.windll.gdi32.SelectObject(hdc, old_pen)
+        ctypes.windll.gdi32.SelectObject(hdc, old_brush)
+        ctypes.windll.gdi32.DeleteObject(pen)
+        ctypes.windll.user32.ReleaseDC(ctypes.c_void_p(0xFFFF), hdc)
+
+        # 延迟后自动清除：在相同位置画一遍背景色（简单但有效）
+        def _clear():
+            import time
+            time.sleep(duration)
+            try:
+                hdc2 = ctypes.windll.user32.GetDC(ctypes.c_void_p(0xFFFF))
+                pen2 = ctypes.windll.gdi32.CreatePen(0, thickness, 0x000000)
+                ctypes.windll.gdi32.SelectObject(hdc2, pen2)
+                brush2 = ctypes.windll.gdi32.GetStockObject(5)
+                ctypes.windll.gdi32.SelectObject(hdc2, brush2)
+                ctypes.windll.gdi32.Rectangle(hdc2, left, top, right, bottom)
+                ctypes.windll.gdi32.DeleteObject(pen2)
+                ctypes.windll.user32.ReleaseDC(ctypes.c_void_p(0xFFFF), hdc2)
+            except Exception:
+                pass
+
+        threading.Thread(target=_clear, daemon=True).start()
+
+        logger.debug("highlight_window(%d) %dx%d 红色描边 %.1fs", hwnd, w, h, duration)
+    except Exception as exc:
+        logger.debug("highlight_window 失败: %s", exc)
 
 
 def _scale_coords(hwnd: int, x: int, y: int) -> tuple[int, int]:
