@@ -43,7 +43,7 @@ def _get_dxcam():
 
 def capture_window(left: int, top: int,
                    right: int, bottom: int,
-                   quality: int = 85,
+                   quality: int = 100,
                    hwnd: int = 0) -> Optional[tuple[str, str]]:
     """截取指定区域的截图，返回 (base64, mime_type) 元组。
 
@@ -153,7 +153,7 @@ def _capture_pil(left: int, top: int,
         return None
 
 
-def capture_full_screen(quality: int = 85) -> Optional[tuple[str, str]]:
+def capture_full_screen(quality: int = 100) -> Optional[tuple[str, str]]:
     """截取全屏，返回 (base64, mime_type)。"""
     try:
         from PIL import Image
