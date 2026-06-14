@@ -425,7 +425,7 @@ def main() -> None:
     _register_kill_switch()
     try:
         from mcp.server import Server
-        from mcp.server.models import InitializationOptions
+        from mcp.server.models import InitializationOptions, ServerCapabilities
         import mcp.server.stdio
         app = Server("desktop")
 
@@ -480,6 +480,7 @@ def main() -> None:
             async with mcp.server.stdio.stdio_server() as (rs, ws):
                 await app.run(rs, ws, InitializationOptions(
                     server_name="desktop", server_version=__version__,
+                    capabilities=ServerCapabilities(),
                 ))
 
         asyncio.run(run())
