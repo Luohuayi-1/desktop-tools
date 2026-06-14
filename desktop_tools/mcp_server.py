@@ -207,7 +207,13 @@ def tool_get_snapshot() -> list[types.Content]:
     parts = []
     parts.append(f"当前窗口: \"{win.title}\"")
     parts.append(f"进程: {win.process_name or 'unknown'}")
-    parts.append(f"窗口大小: {win.rect.width} x {win.rect.height}")
+    from .windows_api import get_client_rect
+    _cr2 = get_client_rect(hwnd)
+    if _cr2:
+        parts.append(f"窗口大小: {win.rect.width} x {win.rect.height}")
+        parts.append(f"客户区大小: {_cr2['client_width']} x {_cr2['client_height']} | 坐标原点(0,0)=客户区左上角")
+    else:
+        parts.append(f"窗口大小: {win.rect.width} x {win.rect.height}")
 
     # 复用 win_control，避免再次 GetFocusedControl
     elements = list_active_window_elements(win_control=win_control)
@@ -567,7 +573,7 @@ def main() -> None:
         @app.list_tools()
         async def list_tools() -> list[types.Tool]:
             return [
-                types.Tool(name="get_snapshot", description="获取当前激活窗口完整快照。返回窗口信息+控件列表+截图（Agent可直接查看）。截图使用D3D后端，被遮挡也能截取。Agent根据截图和控件信息决定下一步操作的坐标。", inputSchema={"type":"object","properties":{}}),
+                types.Tool(name="get_snapshot", description="获取当前窗口完整快照。返回含客户区尺寸和窗口尺寸的文本描述，以及JPEG截图。坐标(0,0)=客户区左上角（不含标题栏/边框）。截图已缩放到50%尺寸，点击坐标需按客户区尺寸等比换算。", inputSchema={"type":"object","properties":{}}),
                 types.Tool(name="click", description="在窗口相对坐标(x,y)处点击左键。(0,0)=窗口左上角。", inputSchema={"type":"object","properties":{"x":{"type":"integer"},"y":{"type":"integer"}},"required":["x","y"]}),
                 types.Tool(name="double_click", description="在窗口相对坐标(x,y)处双击。", inputSchema={"type":"object","properties":{"x":{"type":"integer"},"y":{"type":"integer"}},"required":["x","y"]}),
                 types.Tool(name="move_to", description="移动鼠标到窗口相对坐标(x,y)处（不点击）。", inputSchema={"type":"object","properties":{"x":{"type":"integer"},"y":{"type":"integer"}},"required":["x","y"]}),

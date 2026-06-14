@@ -43,7 +43,7 @@ def _get_dxcam():
 
 def capture_window(left: int, top: int,
                    right: int, bottom: int,
-                   quality: int = 60,
+                   quality: int = 85,
                    hwnd: int = 0) -> Optional[tuple[str, str]]:
     """截取指定区域的截图，返回 (base64, mime_type) 元组。
 
@@ -85,8 +85,12 @@ def capture_window(left: int, top: int,
 
 
 def _encode_img(img, quality: int) -> Optional[tuple[str, str]]:
-    """将 PIL Image 编码为 base64。返回 (base64, mime_type)。"""
+    """将 PIL Image 编码为 base64（缩放到 50% 以减少 token）。返回 (base64, mime_type)。"""
     try:
+        from PIL import Image as PILImage
+        w, h = img.size
+        if w > 800:
+            img = img.resize((w // 2, h // 2), PILImage.LANCZOS)
         buf = io.BytesIO()
         if quality < 95:
             img = img.convert("RGB")
@@ -153,7 +157,7 @@ def _capture_pil(left: int, top: int,
         return None
 
 
-def capture_full_screen(quality: int = 60) -> Optional[tuple[str, str]]:
+def capture_full_screen(quality: int = 85) -> Optional[tuple[str, str]]:
     """截取全屏，返回 (base64, mime_type)。"""
     try:
         from PIL import Image
