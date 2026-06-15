@@ -188,8 +188,85 @@ def _highlight_window(hwnd: int, color: int = 0x0000FF, thickness: int = 4, dura
         logger.debug("highlight_window 失败: %s", exc)
 
 
+def show_layout_bounds(hwnd: int, duration: float = 3.0) -> None:
+    """在目标窗口上绘制所有 UIA 控件的边界框（类似 Android 显示布局边界），duration 秒后自动销毁。"""
+    try:
+        import threading, ctypes
+        from ctypes import wintypes
+        from .windows_api import get_client_rect, list_active_window_elements, ElementInfo
+
+        cr = get_client_rect(hwnd)
+        if not cr:
+            return
+        ox, oy = cr['client_left'], cr['client_top']
+        cw, ch = cr['client_width'], cr['client_height']
+        if cw <= 0 or ch <= 0:
+            return
+
+        elements = list_active_window_elements()
+        if not elements:
+            return
+
+        cls_name = 'DTHLayout'
+        mod = ctypes.windll.kernel32.GetModuleHandleW(None)
+        try:
+            ctypes.windll.user32.RegisterClassW(
+                wintypes.WNDCLASS(style=0,
+                    lpfnWndProc=ctypes.WINFUNCTYPE(
+                        ctypes.c_long, ctypes.c_void_p, ctypes.c_uint, ctypes.c_void_p, ctypes.c_void_p
+                    )(lambda *a: 0),
+                    hInstance=mod, lpszClassName=cls_name)
+            )
+        except Exception:
+            pass
+
+        overlay = ctypes.windll.user32.CreateWindowExW(
+            0x800A8, cls_name, None, 0x80000000,
+            ox, oy, cw, ch, None, None, mod, None
+        )
+        if not overlay:
+            return
+
+        ctypes.windll.user32.SetLayeredWindowAttributes(overlay, 0, 160, 2)
+        ctypes.windll.user32.ShowWindow(overlay, 1)
+        hdc = ctypes.windll.user32.GetDC(overlay)
+
+        colors = [0xFF0000, 0x00FF00, 0x0000FF, 0xFF00FF, 0x00FFFF, 0xFFFF00, 0xFF8800, 0x88FF00, 0x0088FF]
+        for i, elem in enumerate(elements):
+            color = colors[i % len(colors)]
+            rx = elem.rect.center_x - ox - elem.rect.width // 2
+            ry = elem.rect.center_y - oy - elem.rect.height // 2
+            rw, rh = elem.rect.width, elem.rect.height
+            if rw <= 0 or rh <= 0:
+                continue
+            pen = ctypes.windll.gdi32.CreatePen(0, 2, color)
+            ctypes.windll.gdi32.SelectObject(hdc, pen)
+            brush = ctypes.windll.gdi32.GetStockObject(5)
+            ctypes.windll.gdi32.SelectObject(hdc, brush)
+            ctypes.windll.gdi32.Rectangle(hdc, rx, ry, rx + rw, ry + rh)
+            ctypes.windll.gdi32.DeleteObject(pen)
+            try:
+                ctypes.windll.gdi32.SetBkMode(hdc, 1)  # TRANSPARENT
+                ctypes.windll.user32.TextOutW(hdc, rx, ry - 14, f'{i}:{elem.name}', len(f'{i}:{elem.name}'))
+            except Exception:
+                pass
+
+        ctypes.windll.user32.ReleaseDC(overlay, hdc)
+
+        def _clear():
+            import time
+            time.sleep(duration)
+            try:
+                ctypes.windll.user32.PostMessageW(overlay, 0x0010, 0, 0)
+            except Exception:
+                pass
+        threading.Thread(target=_clear, daemon=True).start()
+    except Exception as exc:
+        logger.debug('show_layout_bounds 失败: %s', exc)
+
+
 def _scale_coords(hwnd: int, x: int, y: int) -> tuple[int, int]:
-    """坐标透传（截图和坐标已统一为逻辑像素，无需 DPI 转换）。"""
+    """坐标透传。"""
     return (x, y)
 
 
@@ -477,6 +554,15 @@ def tool_drag(from_x: int, from_y: int, to_x: int, to_y: int) -> list[types.Text
     return [types.TextContent(type="text", text=f"✅ 已拖拽 ({from_x},{from_y}) → ({to_x},{to_y})")]
 
 
+def _show_layout() -> list[types.TextContent]:
+    ctx = _get_ctx()
+    if ctx is None:
+        return [types.TextContent(type="text", text="❌ 无激活窗口")]
+    win, ox, oy, hwnd, _, _ = ctx
+    show_layout_bounds(hwnd)
+    return [types.TextContent(type="text", text="✅ 布局边界已显示 (3s)")]
+
+
 def tool_hold_key(key: str) -> list[types.TextContent]:
     result = exec_hold_key(key)
     if not result.success:
@@ -655,6 +741,7 @@ def main() -> None:
                 types.Tool(name="press_key", description="发送键盘按键或快捷键。支持: Enter/Escape/Tab/方向键, ctrl+c/v/a/z, Alt+Tab, Shift+F10, F1-F12", inputSchema={"type":"object","properties":{"key":{"type":"string"}},"required":["key"]}),
                 types.Tool(name="hold_key", description="按住一个键不放。之后需调用release_key释放。用于Ctrl+点击等组合操作。", inputSchema={"type":"object","properties":{"key":{"type":"string"}},"required":["key"]}),
                 types.Tool(name="release_key", description="释放之前按住的键。", inputSchema={"type":"object","properties":{"key":{"type":"string"}},"required":["key"]}),
+                types.Tool(name="show_layout", description="在当前窗口上绘制所有可交互控件的彩色边界框（持续3秒自动消失），用于调试控件识别准确度。", inputSchema={"type":"object","properties":{}}),
                 types.Tool(name="switch_window", description="切换到标题包含指定文字的窗口。如'微信'、'Chrome'。多候选时返回列表。", inputSchema={"type":"object","properties":{"title":{"type":"string"}},"required":["title"]}),
                 types.Tool(name="list_windows", description="列出当前所有顶层窗口标题。", inputSchema={"type":"object","properties":{}}),
                 types.Tool(name="launch_app", description="启动应用并等待窗口出现。参数path为exe路径或开始菜单名，timeout为等待秒数。", inputSchema={"type":"object","properties":{"path":{"type":"string"},"timeout":{"type":"integer","default":10}},"required":["path"]}),
@@ -678,6 +765,7 @@ def main() -> None:
                 "press_key": lambda: tool_press_key(arguments["key"]),
                 "hold_key": lambda: tool_hold_key(arguments["key"]),
                 "release_key": lambda: tool_release_key(arguments["key"]),
+                "show_layout": lambda: _show_layout(),
                 "switch_window": lambda: tool_switch_window(arguments["title"]),
                 "list_windows": lambda: tool_list_windows(),
                 "launch_app": lambda: tool_launch_app(arguments["path"], arguments.get("timeout", 10)),
