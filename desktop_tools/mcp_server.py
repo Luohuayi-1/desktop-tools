@@ -92,7 +92,11 @@ def _get_ctx():
                 win_control = _find_top_level_window(focused, root)
         except Exception:
             pass
-    ctx = (win, ox, oy, hwnd, win_control)
+    # 自洽性检查：目标窗口与前台是否一致
+    focused_hwnd = foreground
+    ctx_mismatch = (hwnd != focused_hwnd and hwnd == _last_target_hwnd)
+
+    ctx = (win, ox, oy, hwnd, win_control, ctx_mismatch)
     _ctx = ctx
     return ctx
 
@@ -202,7 +206,7 @@ def tool_get_snapshot() -> list[types.Content]:
     ctx = _get_ctx()
     if ctx is None:
         return [types.TextContent(type="text", text="当前无激活窗口")]
-    win, ox, oy, hwnd, win_control = ctx
+    win, ox, oy, hwnd, win_control, ctx_mismatch = ctx
 
     parts = []
     parts.append(f"当前窗口: \"{win.title}\"")
@@ -211,9 +215,17 @@ def tool_get_snapshot() -> list[types.Content]:
     _cr2 = get_client_rect(hwnd)
     if _cr2:
         parts.append(f"窗口大小: {win.rect.width} x {win.rect.height}")
+    if ctx_mismatch:
+        from .windows_api import get_active_window
+        _fw = get_active_window()
+        parts.append(f"⚠️ 注意：目标窗口与当前前台窗口不一致，前台为「{_fw.title if _fw else '?'}」。以下信息基于目标句柄，截图内容可能不匹配，请以文本信息为准")
         parts.append(f"客户区大小: {_cr2['client_width']} x {_cr2['client_height']} | 坐标原点(0,0)=客户区左上角")
     else:
         parts.append(f"窗口大小: {win.rect.width} x {win.rect.height}")
+    if ctx_mismatch:
+        from .windows_api import get_active_window
+        _fw = get_active_window()
+        parts.append(f"⚠️ 注意：目标窗口与当前前台窗口不一致，前台为「{_fw.title if _fw else '?'}」。以下信息基于目标句柄，截图内容可能不匹配，请以文本信息为准")
 
     # 复用 win_control，避免再次 GetFocusedControl
     elements = list_active_window_elements(win_control=win_control)
@@ -250,9 +262,8 @@ def _do_click(x: int, y: int, label: str = "点击") -> list[types.TextContent]:
     ctx = _get_ctx()
     if ctx is None:
         return [types.TextContent(type="text", text="❌ 当前无激活窗口")]
-    win, ox, oy, hwnd, _ = ctx
+    win, ox, oy, hwnd, _, _ = ctx
     _bring_target_front(hwnd)
-    # 按目标窗口所在屏幕的 DPI 缩放
     sx, sy = _scale_coords(hwnd, ox + x, oy + y)
     result = exec_click(sx, sy)
     if not result.success:
@@ -286,7 +297,7 @@ def tool_double_click(x: int, y: int) -> list[types.TextContent]:
     ctx = _get_ctx()
     if ctx is None:
         return [types.TextContent(type="text", text="❌ 当前无激活窗口")]
-    win, ox, oy, hwnd, _ = ctx
+    win, ox, oy, hwnd, _, _ = ctx
     _bring_target_front(hwnd)
     sx, sy = _scale_coords(hwnd, ox + x, oy + y)
     result = exec_double_click(sx, sy)
@@ -299,7 +310,7 @@ def tool_move_to(x: int, y: int) -> list[types.TextContent]:
     ctx = _get_ctx()
     if ctx is None:
         return [types.TextContent(type="text", text="❌ 当前无激活窗口")]
-    win, ox, oy, hwnd, _ = ctx
+    win, ox, oy, hwnd, _, _ = ctx
     _bring_target_front(hwnd)
     sx, sy = _scale_coords(hwnd, ox + x, oy + y)
     result = exec_move_to(sx, sy)
@@ -312,7 +323,7 @@ def tool_type_text(text: str, x: int, y: int) -> list[types.TextContent]:
     ctx = _get_ctx()
     if ctx is None:
         return [types.TextContent(type="text", text="❌ 当前无激活窗口")]
-    win, ox, oy, hwnd, _ = ctx
+    win, ox, oy, hwnd, _, _ = ctx
     _bring_target_front(hwnd)
     sx, sy = _scale_coords(hwnd, ox + x, oy + y)
     result = exec_type_text(sx, sy, text)
@@ -326,7 +337,7 @@ def tool_scroll(x: int, y: int,
     ctx = _get_ctx()
     if ctx is None:
         return [types.TextContent(type="text", text="❌ 当前无激活窗口")]
-    win, ox, oy, hwnd, _ = ctx
+    win, ox, oy, hwnd, _, _ = ctx
     _bring_target_front(hwnd)
     sx, sy = _scale_coords(hwnd, ox + x, oy + y)
     result = exec_scroll(sx, sy, delta_x, delta_y)
@@ -455,7 +466,7 @@ def tool_drag(from_x: int, from_y: int, to_x: int, to_y: int) -> list[types.Text
     ctx = _get_ctx()
     if ctx is None:
         return [types.TextContent(type="text", text="❌ 当前无激活窗口")]
-    win, ox, oy, hwnd, _ = ctx
+    win, ox, oy, hwnd, _, _ = ctx
     _bring_target_front(hwnd)
     sx1, sy1 = _scale_coords(hwnd, ox + from_x, oy + from_y)
     sx2, sy2 = _scale_coords(hwnd, ox + to_x, oy + to_y)
