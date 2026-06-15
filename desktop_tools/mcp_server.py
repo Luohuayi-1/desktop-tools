@@ -202,59 +202,58 @@ def _scale_coords(hwnd: int, x: int, y: int) -> tuple[int, int]:
 
 
 def tool_get_snapshot() -> list[types.Content]:
-    """快照：窗口信息 + accessibility 树 + 截图（ImageContent）。"""
+    """快照：窗口信息 + 控件树 + 截图。目标与前台不一致时同时展示两者。"""
     ctx = _get_ctx()
     if ctx is None:
         return [types.TextContent(type="text", text="当前无激活窗口")]
     win, ox, oy, hwnd, win_control, ctx_mismatch = ctx
 
+    from .windows_api import get_client_rect, get_active_window
+    fg = get_active_window()
+    fg_name = fg.title if fg else "?"
     parts = []
-    parts.append(f"当前窗口: \"{win.title}\"")
+    parts.append(f"目标窗口: \"{win.title}\" (句柄 0x{hwnd:X})")
     parts.append(f"进程: {win.process_name or 'unknown'}")
-    from .windows_api import get_client_rect
-    _cr2 = get_client_rect(hwnd)
-    if _cr2:
-        parts.append(f"窗口大小: {win.rect.width} x {win.rect.height}")
     if ctx_mismatch:
-        from .windows_api import get_active_window
-        _fw = get_active_window()
-        parts.append(f"⚠️ 注意：目标窗口与当前前台窗口不一致，前台为「{_fw.title if _fw else '?'}」。以下信息基于目标句柄，截图内容可能不匹配，请以文本信息为准")
-        parts.append(f"客户区大小: {_cr2['client_width']} x {_cr2['client_height']} | 坐标原点(0,0)=客户区左上角")
+        parts.append(f"⚠️ 前台窗口为「{fg_name}」，与目标不同！以下内容基于目标窗口，非前台。")
+    else:
+        parts.append(f"前台窗口: \"{fg_name}\"")
+    _cr = get_client_rect(hwnd)
+    if _cr:
+        parts.append(f"窗口: {win.rect.width}x{win.rect.height}")
+        parts.append(f"客户区: {_cr['client_width']}x{_cr['client_height']}  (0,0)=客户区左上角")
     else:
         parts.append(f"窗口大小: {win.rect.width} x {win.rect.height}")
-    if ctx_mismatch:
-        from .windows_api import get_active_window
-        _fw = get_active_window()
-        parts.append(f"⚠️ 注意：目标窗口与当前前台窗口不一致，前台为「{_fw.title if _fw else '?'}」。以下信息基于目标句柄，截图内容可能不匹配，请以文本信息为准")
-
-    # 复用 win_control，避免再次 GetFocusedControl
     elements = list_active_window_elements(win_control=win_control)
     if elements:
-        parts.append(f"\n可交互控件 ({len(elements)} 个):")
-        shown = elements[:15]
-        for i, e in enumerate(shown):
-            parts.append(
-                f"  [{i}] [{e.role}] \"{e.name}\" "
-                f"@ ({e.rect.center_x - ox}, "
-                f"{e.rect.center_y - oy})"
-                f" {'[可用]' if e.is_enabled else '[不可用]'}"
-            )
+        parts.append(f"\n控件 ({len(elements)} 个):")
+        for i, e in enumerate(elements[:15]):
+            parts.append(f"  [{i}] [{e.role}] \"{e.name}\" @ ({e.rect.center_x-ox}, {e.rect.center_y-oy})")
         if len(elements) > 15:
-            parts.append(f"  ... 还有 {len(elements) - 15} 个控件未显示")
+            parts.append(f"  ... {len(elements)-15} 个")
     else:
-        parts.append("\n(该窗口未暴露可交互控件信息，请查看截图自行判断)")
+        parts.append("\n(无 UIA 控件)")
+    txt = types.TextContent(type="text", text="\n".join(parts))
 
-    text_content = types.TextContent(type="text", text="\n".join(parts))
-    # 用客户区宽高截取截图
-    from .windows_api import get_client_rect
-    _cr = get_client_rect(hwnd)
-    sw = _cr['client_width'] if _cr else win.rect.width
-    sh = _cr['client_height'] if _cr else win.rect.height
-    screenshot = capture_window(ox, oy, ox + sw, oy + sh, hwnd=hwnd)
-    if screenshot:
-        b64, mime = screenshot
-        return [text_content, types.ImageContent(type="image", data=b64, mimeType=mime)]
-    return [text_content]
+    cr = get_client_rect(hwnd)
+    sw = cr['client_width'] if cr else win.rect.width
+    sh = cr['client_height'] if cr else win.rect.height
+    shot = capture_window(ox, oy, ox+sw, oy+sh, hwnd=hwnd)
+    result = [txt]
+    if shot:
+        b, m = shot
+        result.append(types.ImageContent(type="image", data=b, mimeType=m))
+    if ctx_mismatch and fg and fg.hwnd:
+        fcr = get_client_rect(fg.hwnd)
+        if fcr:
+            fshot = capture_window(fcr['client_left'], fcr['client_top'],
+                                   fcr['client_left']+fcr['client_width'],
+                                   fcr['client_top']+fcr['client_height'], hwnd=fg.hwnd)
+            if fshot:
+                bf, mf = fshot
+                result.append(types.TextContent(type="text", text=f"【对比】前台「{fg_name}」截图:"))
+                result.append(types.ImageContent(type="image", data=bf, mimeType=mf))
+    return result
 
 
 def _do_click(x: int, y: int, label: str = "点击") -> list[types.TextContent]:
