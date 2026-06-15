@@ -295,13 +295,13 @@ def tool_get_snapshot() -> list[types.Content]:
         parts.append(f"窗口大小: {win.rect.width} x {win.rect.height}")
     elements = list_active_window_elements(win_control=win_control)
     if elements:
-        parts.append(f"\n控件 ({len(elements)} 个):")
+        parts.append(f"\n控件 ({len(elements)} 个，可用 click_element 索引点击):")
         for i, e in enumerate(elements[:15]):
             parts.append(f"  [{i}] [{e.role}] \"{e.name}\" @ ({e.rect.center_x-ox}, {e.rect.center_y-oy})")
         if len(elements) > 15:
             parts.append(f"  ... {len(elements)-15} 个")
     else:
-        parts.append("\n(无 UIA 控件)")
+        parts.append("\n(无 UIA 控件，请用截图坐标估算)")
     txt = types.TextContent(type="text", text="\n".join(parts))
 
     cr = get_client_rect(hwnd)
