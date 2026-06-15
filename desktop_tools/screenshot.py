@@ -104,7 +104,8 @@ def _encode_img(img, quality: int) -> Optional[tuple[str, str]]:
 
 def _capture_dxcam(left: int, top: int,
                    right: int, bottom: int,
-                   quality: int) -> Optional[tuple[str, str]]:
+                   quality: int,
+                   hwnd: int = 0) -> Optional[tuple[str, str]]:
     """使用 DXcam（D3D 后端）截取指定区域。"""
     try:
         import numpy as np
@@ -127,6 +128,12 @@ def _capture_dxcam(left: int, top: int,
             return None
 
         img = Image.fromarray(frame)
+        # DXcam 获取的是物理像素，按 DPI 缩放回逻辑像素
+        s = _get_dpi_scale(hwnd) if hwnd else 1.0
+        if s != 1.0:
+            w = int(img.width / s)
+            h = int(img.height / s)
+            img = img.resize((w, h), Image.LANCZOS)
         return _encode_img(img, quality)
 
     except ImportError:

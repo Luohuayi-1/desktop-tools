@@ -576,12 +576,7 @@ def _send_mouse_hwheel(amount: int) -> bool:
 # ---------------------------------------------------------------------------
 
 def _move_to(x: int, y: int) -> bool:
-    """移动鼠标到绝对屏幕坐标（含 DPI 缩放）。返回是否成功。"""
-    dpi = _user32.GetDpiForWindow(_user32.GetDesktopWindow())
-    scale = dpi / 96.0
-    if scale != 1.0:
-        x = int(x * scale)
-        y = int(y * scale)
+    """移动鼠标到屏幕坐标。返回是否成功。"""
     return bool(_SetCursorPos(x, y))
 
 

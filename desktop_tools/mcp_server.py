@@ -189,15 +189,7 @@ def _highlight_window(hwnd: int, color: int = 0x0000FF, thickness: int = 4, dura
 
 
 def _scale_coords(hwnd: int, x: int, y: int) -> tuple[int, int]:
-    """按目标窗口所在屏幕的 DPI 缩放坐标。"""
-    try:
-        dpi = ctypes.windll.user32.GetDpiForWindow(ctypes.c_void_p(hwnd))
-        scale = dpi / 96.0
-        if scale != 1.0:
-            x = int(x * scale)
-            y = int(y * scale)
-    except Exception:
-        pass
+    """坐标透传（截图和坐标已统一为逻辑像素，无需 DPI 转换）。"""
     return (x, y)
 
 
