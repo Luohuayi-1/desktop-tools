@@ -63,15 +63,8 @@ def capture_window(left: int, top: int,
         logger.warning("无效截图区域: (%d,%d)-(%d,%d)", left, top, right, bottom)
         return None
 
-    # DXcam 需要物理坐标（逻辑坐标 × DPI 缩放）
-    # 用 window 的 hwnd 获取其所在屏幕的 DPI
-    scale = _get_dpi_scale(hwnd)
-    phys_left = int(left * scale)
-    phys_top = int(top * scale)
-    phys_right = int(right * scale)
-    phys_bottom = int(bottom * scale)
-
-    result = _capture_dxcam(phys_left, phys_top, phys_right, phys_bottom, quality)
+    # DXcam 内部做物理坐标转换 + 逻辑像素下采样
+    result = _capture_dxcam(left, top, right, bottom, quality, hwnd)
     if result is not None:
         return result
 
@@ -106,7 +99,7 @@ def _capture_dxcam(left: int, top: int,
                    right: int, bottom: int,
                    quality: int,
                    hwnd: int = 0) -> Optional[tuple[str, str]]:
-    """使用 DXcam（D3D 后端）截取指定区域。"""
+    """使用 DXcam（D3D 后端）截取指定区域。输入逻辑坐标，输出逻辑像素 PNG。"""
     try:
         import numpy as np
         from PIL import Image
@@ -115,8 +108,10 @@ def _capture_dxcam(left: int, top: int,
         if camera is None:
             return None
 
-        region = (left, top, right, bottom)
-        frame = camera.grab(region=region)
+        # DXcam grab 需要物理像素坐标
+        s = _get_dpi_scale(hwnd)
+        phys = (int(left * s), int(top * s), int(right * s), int(bottom * s))
+        frame = camera.grab(region=phys)
 
         if frame is None:
             import time
