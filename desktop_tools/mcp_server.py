@@ -256,6 +256,16 @@ def tool_get_snapshot() -> list[types.Content]:
     return result
 
 
+def tool_capture_screen() -> list[types.Content]:
+    """截取全屏（不依赖窗口上下文）。Agent 可用此工具查看整个桌面布局，定位图标后切换到目标窗口。"""
+    from .screenshot import capture_full_screen
+    shot = capture_full_screen()
+    if shot:
+        b, m = shot
+        return [types.TextContent(type="text", text="全屏截图:"), types.ImageContent(type="image", data=b, mimeType=m)]
+    return [types.TextContent(type="text", text="截图失败")]
+
+
 def _do_click(x: int, y: int, label: str = "点击") -> list[types.TextContent]:
     """通用点击操作（按 hwnd DPI 缩放后执行）。"""
     ctx = _get_ctx()
@@ -644,6 +654,7 @@ def main() -> None:
         @app.list_tools()
         async def list_tools() -> list[types.Tool]:
             return [
+                types.Tool(name="capture_screen", description="截取整个桌面屏幕截图，用于查看全局布局。返回 PNG 全屏截图。", inputSchema={"type":"object","properties":{}}),
                 types.Tool(name="get_snapshot", description="获取当前窗口完整快照。返回含客户区尺寸和窗口尺寸的文本描述，以及JPEG截图。坐标(0,0)=客户区左上角（不含标题栏/边框）。截图已缩放到50%尺寸，点击坐标需按客户区尺寸等比换算。", inputSchema={"type":"object","properties":{}}),
                 types.Tool(name="click", description="在窗口相对坐标(x,y)处点击左键。(0,0)=窗口左上角。", inputSchema={"type":"object","properties":{"x":{"type":"integer"},"y":{"type":"integer"}},"required":["x","y"]}),
                 types.Tool(name="double_click", description="在窗口相对坐标(x,y)处双击。", inputSchema={"type":"object","properties":{"x":{"type":"integer"},"y":{"type":"integer"}},"required":["x","y"]}),
@@ -666,6 +677,7 @@ def main() -> None:
         async def call_tool(name: str, arguments: dict) -> list:
             _log_call(name, arguments, "started")
             fns = {
+                "capture_screen": lambda: tool_capture_screen(),
                 "get_snapshot": lambda: tool_get_snapshot(),
                 "click": lambda: tool_click(arguments["x"], arguments["y"]),
                 "double_click": lambda: tool_double_click(arguments["x"], arguments["y"]),
